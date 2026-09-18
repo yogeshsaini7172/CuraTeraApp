@@ -12,16 +12,22 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
+import { SupportedLanguage } from '../i18n/translations';
 
 interface LoginScreenProps {
   onLoginSuccess: (userName: string) => void;
   onDemoLogin: () => void;
+  currentLanguage?: SupportedLanguage;
+  onLanguageChange?: (lang: SupportedLanguage) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
   onDemoLogin,
+  currentLanguage = 'hi',
+  onLanguageChange,
 }) => {
+  const isEn = currentLanguage === 'en';
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,17 +39,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMessage(null);
 
     if (authMode === 'signup' && !fullName.trim()) {
-      setErrorMessage('Please enter your name.');
+      setErrorMessage(isEn ? 'Please enter your name.' : 'कृपया अपना नाम दर्ज करें।');
       return;
     }
 
     if (!email.trim() || !email.includes('@')) {
-      setErrorMessage('Please enter a valid email.');
+      setErrorMessage(isEn ? 'Please enter a valid email.' : 'कृपया एक मान्य ईमेल पता दर्ज करें।');
       return;
     }
 
     if (!password || password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters.');
+      setErrorMessage(isEn ? 'Password must be at least 6 characters.' : 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
       return;
     }
 
@@ -66,6 +72,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Top Language Switcher Bar */}
+        {onLanguageChange && (
+          <View style={styles.topLangRow}>
+            <TouchableOpacity
+              style={styles.langSwitchBtn}
+              onPress={() => onLanguageChange(isEn ? 'hi' : 'en')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="language" size={15} color="#FFFFFF" />
+              <Text style={styles.langSwitchBtnText}>
+                {isEn ? 'हिन्दी में देखें' : 'Switch to English'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 1. Minimal & Clean Brand Hero */}
         <View style={styles.heroSection}>
           <View style={styles.logoBadgeContainer}>
@@ -78,6 +100,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </View>
           </View>
           <Text style={styles.brandTitle}>YojnaMitra</Text>
+          <Text style={styles.brandSubtitle}>
+            {isEn ? 'Citizen Welfare & Schemes Assistant' : 'नागरिक कल्याण एवं योजना सहायक'}
+          </Text>
         </View>
 
         {/* 2. Authentication Card */}
@@ -98,7 +123,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   authMode === 'login' && styles.modeTabTextActive,
                 ]}
               >
-                Log In
+                {isEn ? 'Log In' : 'लॉग इन'}
               </Text>
             </TouchableOpacity>
 
@@ -116,7 +141,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   authMode === 'signup' && styles.modeTabTextActive,
                 ]}
               >
-                Sign Up
+                {isEn ? 'Sign Up' : 'साइन अप'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -132,12 +157,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* Form Fields */}
           {authMode === 'signup' && (
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Name</Text>
+              <Text style={styles.fieldLabel}>
+                {isEn ? 'Full Name' : 'पूरा नाम'}
+              </Text>
               <View style={styles.inputContainer}>
                 <Ionicons name="person-outline" size={18} color={Colors.blue.primary} />
                 <TextInput
                   style={styles.textInput}
-                  placeholder="Your name"
+                  placeholder={isEn ? 'Your name' : 'अपना पूरा नाम दर्ज करें'}
                   placeholderTextColor="#94A3B8"
                   value={fullName}
                   onChangeText={(text) => {
@@ -150,12 +177,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Email</Text>
+            <Text style={styles.fieldLabel}>
+              {isEn ? 'Email Address' : 'ईमेल पता'}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons name="mail-outline" size={18} color={Colors.blue.primary} />
               <TextInput
                 style={styles.textInput}
-                placeholder="name@example.com"
+                placeholder={isEn ? 'name@example.com' : 'नाम@example.com'}
                 placeholderTextColor="#94A3B8"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -169,12 +198,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Password</Text>
+            <Text style={styles.fieldLabel}>
+              {isEn ? 'Password' : 'पासवर्ड'}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={18} color={Colors.blue.primary} />
               <TextInput
                 style={styles.textInput}
-                placeholder="Password (6+ characters)"
+                placeholder={isEn ? 'Password (6+ characters)' : 'पासवर्ड (कम से कम 6 अक्षर)'}
                 placeholderTextColor="#94A3B8"
                 secureTextEntry={!showPassword}
                 value={password}
@@ -203,7 +234,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             activeOpacity={0.88}
           >
             <Text style={styles.primaryAuthButtonText}>
-              {authMode === 'login' ? 'Log In' : 'Sign Up'}
+              {authMode === 'login'
+                ? (isEn ? 'Log In' : 'लॉग इन करें')
+                : (isEn ? 'Sign Up' : 'खाता बनाएं')}
             </Text>
             <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
           </TouchableOpacity>
@@ -211,7 +244,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* Simple Clean Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
+            <Text style={styles.dividerText}>{isEn ? 'OR' : 'या'}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -222,7 +255,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             activeOpacity={0.85}
           >
             <Ionicons name="logo-google" size={18} color="#EA4335" />
-            <Text style={styles.googleAuthButtonText}>Continue with Google</Text>
+            <Text style={styles.googleAuthButtonText}>
+              {isEn ? 'Continue with Google' : 'Google के साथ आगे बढ़ें'}
+            </Text>
           </TouchableOpacity>
 
           {/* Quick Demo Mode */}
@@ -232,7 +267,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             activeOpacity={0.85}
           >
             <Ionicons name="flash" size={17} color={Colors.orange.primary} />
-            <Text style={styles.demoAuthButtonText}>Explore Demo</Text>
+            <Text style={styles.demoAuthButtonText}>
+              {isEn ? 'Explore Demo as Citizen' : 'डेमो नागरिक के रूप में देखें'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -245,7 +282,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
           <View style={styles.trustBadgeRow}>
             <Ionicons name="shield-checkmark" size={14} color={Colors.orange.primary} />
-            <Text style={styles.trustFooterText}>DigiLocker Verified • 100% Secure</Text>
+            <Text style={styles.trustFooterText}>
+              {isEn ? 'GovTech Secured • 100% Protected' : 'GovTech सुरक्षित • 100% डेटा सुरक्षा'}
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -264,6 +303,29 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     paddingHorizontal: 20,
     justifyContent: 'center',
+  },
+
+  // Top Language Bar
+  topLangRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  langSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  langSwitchBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   // Hero Section
@@ -301,6 +363,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: Colors.white.pure,
     letterSpacing: 0.5,
+  },
+  brandSubtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.82)',
+    marginTop: 4,
+    textAlign: 'center',
   },
 
   // Auth Card

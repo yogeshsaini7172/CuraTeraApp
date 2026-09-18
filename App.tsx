@@ -26,6 +26,7 @@ import { DocumentsScreen } from './src/screens/DocumentsScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
+import { LanguageSelectScreen } from './src/screens/LanguageSelectScreen';
 import { SchemeDetailScreen } from './src/screens/SchemeDetailScreen';
 import { NotificationsScreen } from './src/screens/NotificationsScreen';
 
@@ -36,7 +37,8 @@ import { SupportedLanguage, translations } from './src/i18n/translations';
 export default function App() {
   // 1. App Lifecycle & Navigation State
   const [showSplash, setShowSplash] = useState<boolean>(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [navHistory, setNavHistory] = useState<NavTab[]>(['home']);
 
@@ -195,6 +197,8 @@ export default function App() {
           <View style={{ height: statusBarHeight, backgroundColor: '#0A2540' }} />
         )}
         <LoginScreen
+          currentLanguage={currentLanguage}
+          onLanguageChange={setCurrentLanguage}
           onLoginSuccess={(userName) => {
             setIsLoggedIn(true);
           }}
@@ -207,7 +211,26 @@ export default function App() {
     );
   }
 
-  // 3. Main Authenticated App
+  // 3. Post-Login Language Selection Phase (Strictly 2 Languages: हिन्दी and English)
+  if (!hasSelectedLanguage) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <RNStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={true} />
+        {Platform.OS === 'android' && (
+          <View style={{ height: statusBarHeight, backgroundColor: '#FFFFFF' }} />
+        )}
+        <LanguageSelectScreen
+          initialLanguage={currentLanguage}
+          onLanguageSelected={(selectedLang) => {
+            setCurrentLanguage(selectedLang);
+            setHasSelectedLanguage(true);
+          }}
+        />
+      </View>
+    );
+  }
+
+  // 4. Main Authenticated App
   return (
     <View style={styles.appContainer}>
       <RNStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={true} />
@@ -315,6 +338,7 @@ export default function App() {
                 onLanguageChange={setCurrentLanguage}
                 onLogout={() => {
                   setIsLoggedIn(false);
+                  setHasSelectedLanguage(false);
                   setActiveTab('home');
                   setNavHistory(['home']);
                 }}
