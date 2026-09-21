@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  Vibration,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import * as Speech from 'expo-speech';
-import * as Haptics from 'expo-haptics';
+import { Ionicons } from '../utils/icons';
+import Speech from '../utils/speech';
 import { Colors } from '../theme/colors';
 
 import { SupportedLanguage } from '../i18n/translations';
@@ -179,7 +179,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   // Toggle Voice Input simulation with Haptic vibration
   const handleToggleVoice = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Vibration.vibrate(20);
     if (!isListening) {
       setIsListening(true);
       // Simulate speech recognition result after 2.2 seconds

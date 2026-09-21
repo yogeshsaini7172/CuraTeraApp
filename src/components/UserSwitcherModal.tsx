@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { DEMO_USERS, DemoUser } from '../data/demoUsers';
 import { SupportedLanguage } from '../i18n/translations';

@@ -1,17 +1,18 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
 
-# Expo
+# Expo / web artifacts
 .expo/
 dist/
 web-build/
-expo-env.d.ts
 
-# Native
+# Android build artifacts
+android/.gradle/
+android/app/build/
+android/build/
 .kotlin/
-*.orig.*
+
+# Native keys
 *.jks
 *.p8
 *.p12
@@ -35,7 +36,3 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
-
-# generated native folders
-/ios
-/android

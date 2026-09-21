@@ -12,8 +12,8 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '../utils/icons';
+import * as ImagePicker from '../utils/imagePicker';
 import { INITIAL_DOCUMENTS, SCHEMES } from '../data/schemesData';
 import { DocumentItem } from '../types';
 import { DemoUser } from '../data/demoUsers';

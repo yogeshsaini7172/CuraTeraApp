@@ -9,7 +9,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { SupportedLanguage } from '../i18n/translations';
 
@@ -31,158 +31,132 @@ export const LanguageSelectScreen: React.FC<LanguageSelectScreenProps> = ({
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      {Platform.OS === 'android' && (
+        <View style={{ height: StatusBar.currentHeight || 28, backgroundColor: '#FFFFFF' }} />
+      )}
 
       <View style={styles.content}>
-        {/* 1. Official Brand Header */}
-        <View style={styles.brandHeader}>
-          <View style={styles.logoBadge}>
-            <Image
-              source={require('../../assets/YojnaLogo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+        {/* Main Content */}
+        <View>
+          {/* 1. Official Brand Header */}
+          <View style={styles.brandHeader}>
+            <View style={styles.logoBadge}>
+              <Image
+                source={require('../../assets/YojnaLogo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.brandTitle}>YojnaMitra</Text>
           </View>
-          <Text style={styles.brandTitle}>YojnaMitra</Text>
-          <Text style={styles.brandSubtitle}>
-            योजना मित्र • Citizen Welfare Assistant
-          </Text>
-        </View>
 
-        {/* 2. Main Title & Instructions */}
-        <View style={styles.titleSection}>
-          <Text style={styles.headlineHi}>अपनी पसंदीदा भाषा चुनें</Text>
-          <Text style={styles.headlineEn}>Choose your preferred language</Text>
-          <Text style={styles.helperText}>
-            You can change this anytime from your Profile settings.
-          </Text>
-        </View>
+          {/* 2. Main Title */}
+          <View style={styles.titleSection}>
+            <Text style={styles.headlineHi}>अपनी भाषा चुनें</Text>
+            <Text style={styles.headlineEn}>Choose your language</Text>
+          </View>
 
-        {/* 3. The 2 Core Language Cards: Hindi & English */}
-        <View style={styles.cardsContainer}>
-          {/* Hindi Option */}
-          <TouchableOpacity
-            style={[
-              styles.languageCard,
-              selectedLang === 'hi' && styles.languageCardActive,
-            ]}
-            onPress={() => setSelectedLang('hi')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.cardLeft}>
-              <View
-                style={[
-                  styles.scriptCircle,
-                  selectedLang === 'hi' && styles.scriptCircleActive,
-                ]}
-              >
-                <Text
+          {/* 3. The 2 Clean Language Cards: Hindi & English */}
+          <View style={styles.cardsContainer}>
+            {/* Hindi Option */}
+            <TouchableOpacity
+              style={[
+                styles.languageCard,
+                selectedLang === 'hi' && styles.languageCardActive,
+              ]}
+              onPress={() => setSelectedLang('hi')}
+              activeOpacity={0.85}
+            >
+              <View style={styles.cardLeft}>
+                <View
                   style={[
-                    styles.scriptText,
-                    selectedLang === 'hi' && styles.scriptTextActive,
+                    styles.scriptCircle,
+                    selectedLang === 'hi' && styles.scriptCircleActive,
                   ]}
                 >
-                  अ
-                </Text>
-              </View>
-
-              <View style={styles.cardTexts}>
-                <View style={styles.langNameRow}>
                   <Text
                     style={[
-                      styles.langName,
-                      selectedLang === 'hi' && styles.langNameActive,
+                      styles.scriptText,
+                      selectedLang === 'hi' && styles.scriptTextActive,
                     ]}
                   >
-                    हिन्दी
+                    अ
                   </Text>
-                  <Text style={styles.nativeTag}>Hindi</Text>
                 </View>
-                <Text style={styles.langDesc}>
-                  सरकारी योजनाएं और सेवाएं सरल हिन्दी में
-                </Text>
-              </View>
-            </View>
 
-            <View
-              style={[
-                styles.radioCircle,
-                selectedLang === 'hi' && styles.radioCircleActive,
-              ]}
-            >
-              {selectedLang === 'hi' && (
-                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-              )}
-            </View>
-          </TouchableOpacity>
-
-          {/* English Option */}
-          <TouchableOpacity
-            style={[
-              styles.languageCard,
-              selectedLang === 'en' && styles.languageCardActive,
-            ]}
-            onPress={() => setSelectedLang('en')}
-            activeOpacity={0.85}
-          >
-            <View style={styles.cardLeft}>
-              <View
-                style={[
-                  styles.scriptCircle,
-                  selectedLang === 'en' && styles.scriptCircleActive,
-                ]}
-              >
                 <Text
                   style={[
-                    styles.scriptText,
-                    selectedLang === 'en' && styles.scriptTextActive,
+                    styles.langName,
+                    selectedLang === 'hi' && styles.langNameActive,
                   ]}
                 >
-                  A
+                  हिन्दी
                 </Text>
               </View>
 
-              <View style={styles.cardTexts}>
-                <View style={styles.langNameRow}>
+              <View
+                style={[
+                  styles.radioCircle,
+                  selectedLang === 'hi' && styles.radioCircleActive,
+                ]}
+              >
+                {selectedLang === 'hi' && (
+                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* English Option */}
+            <TouchableOpacity
+              style={[
+                styles.languageCard,
+                selectedLang === 'en' && styles.languageCardActive,
+              ]}
+              onPress={() => setSelectedLang('en')}
+              activeOpacity={0.85}
+            >
+              <View style={styles.cardLeft}>
+                <View
+                  style={[
+                    styles.scriptCircle,
+                    selectedLang === 'en' && styles.scriptCircleActive,
+                  ]}
+                >
                   <Text
                     style={[
-                      styles.langName,
-                      selectedLang === 'en' && styles.langNameActive,
+                      styles.scriptText,
+                      selectedLang === 'en' && styles.scriptTextActive,
                     ]}
                   >
-                    English
+                    A
                   </Text>
-                  <Text style={styles.nativeTag}>अंग्रेजी</Text>
                 </View>
-                <Text style={styles.langDesc}>
-                  Access all welfare schemes & services in English
+
+                <Text
+                  style={[
+                    styles.langName,
+                    selectedLang === 'en' && styles.langNameActive,
+                  ]}
+                >
+                  English
                 </Text>
               </View>
-            </View>
 
-            <View
-              style={[
-                styles.radioCircle,
-                selectedLang === 'en' && styles.radioCircleActive,
-              ]}
-            >
-              {selectedLang === 'en' && (
-                <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-              )}
-            </View>
-          </TouchableOpacity>
+              <View
+                style={[
+                  styles.radioCircle,
+                  selectedLang === 'en' && styles.radioCircleActive,
+                ]}
+              >
+                {selectedLang === 'en' && (
+                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* 4. Mitra AI Voice Capability Note */}
-        <View style={styles.aiNoteCard}>
-          <Ionicons name="sparkles" size={18} color={Colors.orange.primary} />
-          <Text style={styles.aiNoteText}>
-            {selectedLang === 'hi'
-              ? 'मित्र AI आपसे हिन्दी में बोलकर बात करेगा और योजनाएं समझाएगा।'
-              : 'Mitra AI will assist and speak with you in English.'}
-          </Text>
-        </View>
-
-        {/* 5. Big Bottom Action Button */}
+        {/* 4. Bottom Action Button */}
         <View style={styles.bottomSection}>
           <TouchableOpacity
             style={styles.continueButton}
@@ -190,7 +164,7 @@ export const LanguageSelectScreen: React.FC<LanguageSelectScreenProps> = ({
             activeOpacity={0.85}
           >
             <Text style={styles.continueButtonText}>
-              {selectedLang === 'hi' ? 'आगे बढ़ें (जारी रखें)' : 'Continue to YojnaMitra'}
+              {selectedLang === 'hi' ? 'आगे बढ़ें' : 'Continue'}
             </Text>
             <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
           </TouchableOpacity>
@@ -208,7 +182,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'android' ? 24 : 16,
+    paddingTop: 16,
     paddingBottom: 24,
     justifyContent: 'space-between',
   },
@@ -219,9 +193,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
@@ -231,8 +205,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   logoImage: {
-    width: 52,
-    height: 52,
+    width: 54,
+    height: 54,
     marginTop: 6,
   },
   brandTitle: {
@@ -241,21 +215,15 @@ const styles = StyleSheet.create({
     color: '#0A2540',
     letterSpacing: 0.3,
   },
-  brandSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 3,
-    fontWeight: '500',
-  },
 
   // 2. Title Section
   titleSection: {
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 14,
+    marginTop: 24,
+    marginBottom: 20,
   },
   headlineHi: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
@@ -263,27 +231,21 @@ const styles = StyleSheet.create({
   },
   headlineEn: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#475569',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  helperText: {
-    fontSize: 12,
-    color: '#94A3B8',
+    fontWeight: '600',
+    color: '#64748B',
     textAlign: 'center',
   },
 
   // 3. Language Cards
   cardsContainer: {
     gap: 14,
-    marginVertical: 10,
+    marginTop: 8,
   },
   languageCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
+    height: 68,
     paddingHorizontal: 16,
     borderRadius: 16,
     borderWidth: 2,
@@ -297,59 +259,38 @@ const styles = StyleSheet.create({
   cardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 14,
     flex: 1,
-    marginRight: 12,
   },
   scriptCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
   },
   scriptCircleActive: {
     backgroundColor: '#0A2540',
   },
   scriptText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#0A2540',
+    includeFontPadding: false,
   },
   scriptTextActive: {
     color: '#FFFFFF',
   },
-  cardTexts: {
-    flex: 1,
-  },
-  langNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 3,
-  },
   langName: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0F172A',
+    includeFontPadding: false,
   },
   langNameActive: {
     color: '#0A2540',
-  },
-  nativeTag: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  langDesc: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 16,
+    fontWeight: '800',
   },
   radioCircle: {
     width: 26,
@@ -365,30 +306,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A2540',
   },
 
-  // 4. Mitra AI Note
-  aiNoteCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginVertical: 8,
-  },
-  aiNoteText: {
-    fontSize: 12,
-    color: '#C2410C',
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 17,
-  },
-
-  // 5. Bottom Section
+  // 4. Bottom Action Button
   bottomSection: {
-    marginTop: 10,
+    marginTop: 16,
   },
   continueButton: {
     height: 52,

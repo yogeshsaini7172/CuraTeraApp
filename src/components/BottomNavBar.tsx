@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { NavTab } from '../types';
 import { SupportedLanguage, translations } from '../i18n/translations';

@@ -11,9 +11,8 @@ import {
   BackHandler,
   StatusBar as RNStatusBar,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-import * as Speech from 'expo-speech';
+import { Ionicons } from './src/utils/icons';
+import Speech from './src/utils/speech';
 import { Colors } from './src/theme/colors';
 import { NavTab, Scheme } from './src/types';
 import { SCHEMES, CATEGORIES } from './src/data/schemesData';
@@ -181,10 +180,10 @@ export default function App() {
   // 1. Splash Screen Phase
   if (showSplash) {
     return (
-      <>
+      <View style={{ flex: 1, backgroundColor: '#0A2540' }}>
         <RNStatusBar barStyle="light-content" backgroundColor="#0A2540" translucent={true} />
         <SplashScreen onFinish={() => setShowSplash(false)} />
-      </>
+      </View>
     );
   }
 

@@ -10,9 +10,12 @@ import {
   Alert,
   Platform,
   TextInput,
+  Switch,
+  Linking,
+  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '../utils/icons';
+import * as ImagePicker from '../utils/imagePicker';
 import { Colors } from '../theme/colors';
 import { DemoUser } from '../data/demoUsers';
 import { UserProfile } from '../types';
@@ -45,9 +48,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // Navigation state within profile: Main view vs Full-Page Edit Screen
   const [isEditingFullPage, setIsEditingFullPage] = useState(false);
 
-  // Modals
+  // Modals & Settings State
   const [isPhotoSheetVisible, setIsPhotoSheetVisible] = useState(false);
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+  const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
+  const [isLangPickerVisible, setIsLangPickerVisible] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [voiceGuidanceEnabled, setVoiceGuidanceEnabled] = useState(true);
 
   // Success Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -662,49 +669,29 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* 3. App Settings: Language Buttons (English | हिन्दी) */}
+        {/* 3. Settings Action Row */}
         <View style={styles.sectionBlock}>
-          <Text style={styles.sectionTitle}>
-            {isEn ? 'App Language' : 'ऐप की भाषा'}
-          </Text>
-
-          <View style={styles.languageToggleRow}>
-            <TouchableOpacity
-              style={[
-                styles.langPill,
-                currentLanguage === 'en' && styles.langPillActive,
-              ]}
-              onPress={() => onLanguageChange('en')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.langPillText,
-                  currentLanguage === 'en' && styles.langPillTextActive,
-                ]}
-              >
-                English
+          <TouchableOpacity
+            style={styles.settingsRow}
+            onPress={() => setIsSettingsModalVisible(true)}
+            activeOpacity={0.75}
+          >
+            <View style={styles.settingsLeftContent}>
+              <View style={styles.settingsIconBadge}>
+                <Ionicons name="settings-sharp" size={18} color="#0A2540" />
+              </View>
+              <Text style={styles.settingsRowTitle}>
+                {isEn ? 'Settings' : 'सेटिंग्स'}
               </Text>
-            </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={[
-                styles.langPill,
-                currentLanguage === 'hi' && styles.langPillActive,
-              ]}
-              onPress={() => onLanguageChange('hi')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.langPillText,
-                  currentLanguage === 'hi' && styles.langPillTextActive,
-                ]}
-              >
-                हिन्दी
+            <View style={styles.settingsRightContent}>
+              <Text style={styles.settingsCurrentValue}>
+                {isEn ? 'English' : 'हिन्दी'}
               </Text>
-            </TouchableOpacity>
-          </View>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* 4. Account Action: Clean Logout Row */}
@@ -866,6 +853,310 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* 7. Real-App Style Settings Modal (Clean List of Simple Text Rows) */}
+      <Modal
+        visible={isSettingsModalVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setIsSettingsModalVisible(false)}
+      >
+        <View style={styles.settingsFullContainer}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          {Platform.OS === 'android' && (
+            <View style={{ height: StatusBar.currentHeight || 28, backgroundColor: '#FFFFFF' }} />
+          )}
+
+          {/* Top Bar with Back Arrow */}
+          <View style={styles.settingsTopBar}>
+            <TouchableOpacity
+              style={styles.settingsBackBtn}
+              onPress={() => setIsSettingsModalVisible(false)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="arrow-back" size={22} color="#0A2540" />
+            </TouchableOpacity>
+            <Text style={styles.settingsTopBarTitle}>
+              {isEn ? 'Settings' : 'सेटिंग्स'}
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          <ScrollView
+            style={styles.settingsScrollView}
+            contentContainerStyle={styles.settingsScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Section 1: PREFERENCES */}
+            <Text style={styles.settingsGroupHeader}>
+              {isEn ? 'PREFERENCES' : 'प्राथमिकताएं'}
+            </Text>
+            <View style={styles.settingsListBox}>
+              {/* Row: App Language */}
+              <TouchableOpacity
+                style={styles.settingItemRow}
+                onPress={() => setIsLangPickerVisible(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="language-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'App Language' : 'ऐप की भाषा'}
+                  </Text>
+                </View>
+                <View style={styles.settingItemRight}>
+                  <Text style={styles.settingItemValue}>
+                    {currentLanguage === 'hi' ? 'हिन्दी' : 'English'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              {/* Row: Push Notifications */}
+              <View style={styles.settingItemRow}>
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="notifications-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Notifications' : 'सूचनाएं'}
+                  </Text>
+                </View>
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={(val) => {
+                    setNotificationsEnabled(val);
+                    showToast(val
+                      ? (isEn ? 'Notifications enabled' : 'सूचनाएं चालू कर दी गईं')
+                      : (isEn ? 'Notifications muted' : 'सूचनाएं बंद कर दी गईं')
+                    );
+                  }}
+                  trackColor={{ false: '#CBD5E1', true: Colors.orange.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.settingDivider} />
+
+              {/* Row: Mitra AI Voice Audio */}
+              <View style={styles.settingItemRow}>
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="volume-high-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Mitra AI Voice Guidance' : 'मित्र AI वाचन सहायता'}
+                  </Text>
+                </View>
+                <Switch
+                  value={voiceGuidanceEnabled}
+                  onValueChange={(val) => {
+                    setVoiceGuidanceEnabled(val);
+                    showToast(val
+                      ? (isEn ? 'Voice guidance enabled' : 'वॉइस गाइडेंस चालू')
+                      : (isEn ? 'Voice guidance muted' : 'वॉइस गाइडेंस बंद')
+                    );
+                  }}
+                  trackColor={{ false: '#CBD5E1', true: Colors.orange.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.settingDivider} />
+
+              {/* Row: Clear Cache */}
+              <TouchableOpacity
+                style={styles.settingItemRow}
+                onPress={() => {
+                  showToast(isEn ? 'App cache cleared successfully!' : 'अस्थायी कैश डेटा साफ़ किया गया!');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="trash-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Clear Cache' : 'कैश डेटा साफ़ करें'}
+                  </Text>
+                </View>
+                <View style={styles.settingItemRight}>
+                  <Text style={styles.settingItemValueMuted}>14 MB</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Section 2: HELP & SUPPORT */}
+            <Text style={styles.settingsGroupHeader}>
+              {isEn ? 'HELP & SUPPORT' : 'सहायता एवं संपर्क'}
+            </Text>
+            <View style={styles.settingsListBox}>
+              {/* Row: Citizen Helpline */}
+              <TouchableOpacity
+                style={styles.settingItemRow}
+                onPress={() => Linking.openURL('tel:1551')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="call-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Citizen Helpline (1551)' : 'किसान व नागरिक हेल्पलाइन (1551)'}
+                  </Text>
+                </View>
+                <View style={styles.settingItemRight}>
+                  <Text style={styles.settingItemValueHighlight}>1551</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              {/* Row: Privacy Policy */}
+              <TouchableOpacity
+                style={styles.settingItemRow}
+                onPress={() => {
+                  showToast(isEn ? 'Official GovTech Data Privacy (MeitY)' : 'भारत सरकार डेटा गोपनीयता (MeitY)');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Privacy Policy' : 'गोपनीयता नीति'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.settingDivider} />
+
+              {/* Row: Terms of Service */}
+              <TouchableOpacity
+                style={styles.settingItemRow}
+                onPress={() => {
+                  showToast(isEn ? 'GovTech Terms & Guidelines' : 'नागरिक सेवा नियम व शर्तें');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="document-text-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'Terms of Service' : 'सेवा की शर्तें'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Section 3: APP INFO */}
+            <Text style={styles.settingsGroupHeader}>
+              {isEn ? 'ABOUT' : 'ऐप विवरण'}
+            </Text>
+            <View style={styles.settingsListBox}>
+              <View style={styles.settingItemRow}>
+                <View style={styles.settingItemLeft}>
+                  <View style={styles.settingIconWrap}>
+                    <Ionicons name="information-circle-outline" size={20} color="#0A2540" />
+                  </View>
+                  <Text style={styles.settingItemTitle}>
+                    {isEn ? 'App Version' : 'वर्ज़न'}
+                  </Text>
+                </View>
+                <Text style={styles.settingItemValueMuted}>
+                  v1.2.0 (GovTech India)
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* 8. Native-Style Language Selection Dialog */}
+      <Modal
+        visible={isLangPickerVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsLangPickerVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsLangPickerVisible(false)}
+        >
+          <View style={styles.langDialogCard}>
+            <Text style={styles.langDialogTitle}>
+              {isEn ? 'Select Language' : 'भाषा चुनें'}
+            </Text>
+
+            {/* Option 1: Hindi */}
+            <TouchableOpacity
+              style={styles.langDialogOption}
+              onPress={() => {
+                onLanguageChange('hi');
+                setIsLangPickerVisible(false);
+                showToast('भाषा बदलकर हिन्दी कर दी गई!');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.langDialogRadio}>
+                {currentLanguage === 'hi' && <View style={styles.langDialogRadioInner} />}
+              </View>
+              <View style={styles.langDialogOptionTexts}>
+                <Text style={[styles.langDialogOptionTitle, currentLanguage === 'hi' && styles.langDialogOptionTitleActive]}>
+                  हिन्दी
+                </Text>
+                <Text style={styles.langDialogOptionSub}>Hindi</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.langDialogDivider} />
+
+            {/* Option 2: English */}
+            <TouchableOpacity
+              style={styles.langDialogOption}
+              onPress={() => {
+                onLanguageChange('en');
+                setIsLangPickerVisible(false);
+                showToast('Language changed to English!');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.langDialogRadio}>
+                {currentLanguage === 'en' && <View style={styles.langDialogRadioInner} />}
+              </View>
+              <View style={styles.langDialogOptionTexts}>
+                <Text style={[styles.langDialogOptionTitle, currentLanguage === 'en' && styles.langDialogOptionTitleActive]}>
+                  English
+                </Text>
+                <Text style={styles.langDialogOptionSub}>अंग्रेजी</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.langDialogActions}>
+              <TouchableOpacity
+                style={styles.langDialogCancelBtn}
+                onPress={() => setIsLangPickerVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.langDialogCancelText}>
+                  {isEn ? 'Cancel' : 'रद्द करें'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1080,33 +1371,242 @@ const styles = StyleSheet.create({
     color: '#0A2540',
   },
 
-  // Language Pills
-  languageToggleRow: {
+  // Settings Row
+  settingsRow: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    marginBottom: 6,
+  },
+  settingsLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  settingsIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsRowTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  settingsRowSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  settingsRightContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  settingsCurrentValue: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+
+  // Real-App Settings Full-Screen Modal
+  settingsFullContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  settingsTopBar: {
+    height: 52,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  settingsBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsTopBarTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0A2540',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  settingsScrollView: {
+    flex: 1,
+  },
+  settingsScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 40,
+  },
+  settingsGroupHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    marginTop: 18,
+    paddingHorizontal: 4,
+    includeFontPadding: false,
+  },
+  settingsListBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
     marginBottom: 14,
   },
-  langPill: {
-    flex: 1,
-    paddingVertical: 11,
+  settingItemRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     backgroundColor: '#FFFFFF',
+    minHeight: 52,
   },
-  langPillActive: {
-    borderColor: '#0A2540',
-    backgroundColor: '#0A2540',
+  settingItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  langPillText: {
-    fontSize: 13,
+  settingIconWrap: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingItemTitle: {
+    fontSize: 14.5,
     fontWeight: '600',
-    color: '#475569',
+    color: '#0F172A',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
-  langPillTextActive: {
-    color: '#FFFFFF',
+  settingItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  settingItemValue: {
+    fontSize: 13.5,
     fontWeight: '700',
+    color: '#0A2540',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  settingItemValueMuted: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#94A3B8',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  settingItemValueHighlight: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: Colors.orange.primary,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  settingDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginLeft: 52,
+  },
+
+  // Native-Style Language Dialog
+  langDialogCard: {
+    width: '84%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  langDialogTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0A2540',
+    marginBottom: 16,
+  },
+  langDialogOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
+  },
+  langDialogRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  langDialogRadioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.orange.primary,
+  },
+  langDialogOptionTexts: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  langDialogOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  langDialogOptionTitleActive: {
+    color: Colors.orange.primary,
+    fontWeight: '800',
+  },
+  langDialogOptionSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  langDialogDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  langDialogActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 16,
+  },
+  langDialogCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  langDialogCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
   },
 
   // Logout Row

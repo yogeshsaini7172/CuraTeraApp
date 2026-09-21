@@ -7,7 +7,7 @@ import {
   Linking,
   Animated,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { Scheme, SchemeCategory } from '../types';
 import { CategoryGrid } from '../components/CategoryGrid';
