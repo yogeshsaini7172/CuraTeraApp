@@ -18,6 +18,8 @@ export interface Scheme {
   benefitAmountEn?: string;
   isEligible: boolean;   // 100% eligible match
   matchPercentage: number; // e.g. 100 or 85
+  image?: any;           // local require or image source
+  imageUrl?: string;     // web image fallback
   whyEligibleHi: string;  // e.g. "कच्चा मकान ✓ | BPL कार्ड ✓ | ग्रामीण ✓"
   whyEligibleEn: string;  // e.g. "Kutcha House ✓ | BPL Card ✓ | Rural Resident ✓"
   descriptionHi: string;
@@ -26,6 +28,10 @@ export interface Scheme {
   requiredDocsEn: string[];
   officialUrl: string;
   helplinePhone: string;
+  themeColor?: string;   // Vibrant theme color (Saffron, Blue, Emerald, Purple, Amber, Crimson, etc.)
+  themeLight?: string;   // Pastel soft tint for header & card background
+  themeBorder?: string;  // Subtle border accent
+  themeDark?: string;    // Rich, slightly dark background color for hero card body
 }
 
 export interface SchemeCategory {

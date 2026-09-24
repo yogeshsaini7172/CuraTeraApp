@@ -52,20 +52,19 @@ export default function App() {
 
   // 4. Notifications & Modals State
   const [isNotificationVisible, setIsNotificationVisible] = useState<boolean>(false);
+  const [returnToNotificationOnBack, setReturnToNotificationOnBack] = useState<boolean>(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(['notif-3', 'notif-4']);
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
+  const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
 
   // Helper: Navigate to tab with history stack tracking
   const navigateToTab = (newTab: NavTab) => {
     if (newTab === activeTab) return;
-    if (newTab === 'home') {
-      setNavHistory(['home']);
-    } else {
-      setNavHistory((prev) => {
-        if (prev[prev.length - 1] === newTab) return prev;
-        return [...prev, newTab];
-      });
-    }
+    setNavHistory((prev) => {
+      if (prev[prev.length - 1] === newTab) return prev;
+      return [...prev, newTab];
+    });
     setActiveTab(newTab);
   };
 
@@ -148,6 +147,10 @@ export default function App() {
     Speech.stop();
     setIsSpeakingScheme(false);
     setSelectedSchemeForDocs(null);
+    if (returnToNotificationOnBack) {
+      setReturnToNotificationOnBack(false);
+      setIsNotificationVisible(true);
+    }
   };
 
   const handleSpeakSchemeDetails = (scheme: Scheme) => {
@@ -230,13 +233,25 @@ export default function App() {
   }
 
   // 4. Main Authenticated App
+  const isHomeTab = activeTab === 'home';
+  const homeThemeLight = isHomeTab && activeHomeScheme?.themeLight ? activeHomeScheme.themeLight : '#FFFFFF';
+
   return (
     <View style={styles.appContainer}>
-      <RNStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={true} />
+      <RNStatusBar
+        barStyle="dark-content"
+        backgroundColor={homeThemeLight}
+        translucent={true}
+      />
 
-      {/* Top Status Bar Filler - Pure White for clean ABHA style */}
+      {/* Top Status Bar Filler - Dynamic Theme */}
       {Platform.OS === 'android' && (
-        <View style={{ height: statusBarHeight, backgroundColor: '#FFFFFF' }} />
+        <View
+          style={{
+            height: statusBarHeight,
+            backgroundColor: homeThemeLight,
+          }}
+        />
       )}
 
       {/* Conditional Full-Screen Scheme Detail Page or Notifications Page or Standard App Screen Flow */}
@@ -251,13 +266,24 @@ export default function App() {
         />
       ) : isNotificationVisible ? (
         <NotificationsScreen
-          onBack={() => setIsNotificationVisible(false)}
+          onBack={() => {
+            setIsNotificationVisible(false);
+            setReturnToNotificationOnBack(false);
+          }}
           currentLanguage={currentLanguage}
+          readNotificationIds={readNotificationIds}
+          onMarkNotificationAsRead={(id) => {
+            setReadNotificationIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+          }}
+          onSelectScheme={(scheme) => {
+            setReturnToNotificationOnBack(true);
+            setSelectedSchemeForDocs(scheme);
+          }}
         />
       ) : (
         <>
-          {/* Fixed Compact Header with Back Button on Sub-Screens (Schemes, Docs, Profile, Mitra AI) */}
-          {activeTab !== 'home' && (
+          {/* Header — Rendered at top on tabs other than home, mitra, and profile (Chat and Profile have their own wireframe headers) */}
+          {activeTab !== 'home' && activeTab !== 'mitra' && activeTab !== 'profile' && (
             <Header
               isHome={false}
               activeTab={activeTab}
@@ -267,8 +293,10 @@ export default function App() {
               onOpenNotifications={() => setIsNotificationVisible(true)}
               onNavigateToProfile={() => navigateToTab('profile')}
               eligibleCount={eligibleCount}
-              unreadCount={2}
+              unreadCount={Math.max(0, 4 - readNotificationIds.length)}
               currentLanguage={currentLanguage}
+              themeLight={activeHomeScheme?.themeLight}
+              themeColor={activeHomeScheme?.themeColor}
             />
           )}
 
@@ -276,24 +304,19 @@ export default function App() {
           <View style={styles.screenArea}>
             {activeTab === 'home' && (
               <HomeScreen
-                categories={CATEGORIES}
                 schemes={dynamicSchemes}
-                onStartVoiceChat={handleStartVoiceChat}
                 onViewDocs={handleViewDocs}
+                onNavigateToSchemes={() => navigateToTab('schemes')}
+                onStartVoiceChat={() => navigateToTab('mitra')}
+                onNavigateToTab={navigateToTab}
+                activeUser={activeDemoUser}
+                onOpenProfile={() => setIsUserSwitcherVisible(true)}
+                onOpenUserSwitcher={() => setIsUserSwitcherVisible(true)}
+                onOpenNotifications={() => setIsNotificationVisible(true)}
+                eligibleCount={eligibleCount}
+                unreadCount={Math.max(0, 4 - readNotificationIds.length)}
                 currentLanguage={currentLanguage}
-                headerComponent={
-                  <Header
-                    isHome={true}
-                    activeTab="home"
-                    activeDemoUser={activeDemoUser}
-                    onOpenUserSwitcher={() => setIsUserSwitcherVisible(true)}
-                    onOpenNotifications={() => setIsNotificationVisible(true)}
-                    onNavigateToProfile={() => navigateToTab('profile')}
-                    eligibleCount={eligibleCount}
-                    unreadCount={2}
-                    currentLanguage={currentLanguage}
-                  />
-                }
+                onActiveSchemeChange={setActiveHomeScheme}
               />
             )}
 
@@ -301,32 +324,20 @@ export default function App() {
               <SchemesScreen
                 schemes={dynamicSchemes}
                 onViewDocs={handleViewDocs}
+                onOpenMitraAI={() => navigateToTab('mitra')}
                 currentLanguage={currentLanguage}
               />
             )}
 
             {activeTab === 'mitra' && (
               <ChatScreen
+                onBack={handleGoBack}
                 onNavigateToSchemes={() => navigateToTab('schemes')}
                 currentLanguage={currentLanguage}
               />
             )}
 
-            {activeTab === 'docs' && (
-              <DocumentsScreen
-                currentLanguage={currentLanguage}
-                onNavigateToSchemes={(schemeId) => {
-                  if (schemeId) {
-                    const targetScheme = dynamicSchemes.find((s) => s.id === schemeId);
-                    if (targetScheme) {
-                      setSelectedSchemeForDocs(targetScheme);
-                    }
-                  }
-                  navigateToTab('schemes');
-                }}
-                activeDemoUser={activeDemoUser}
-              />
-            )}
+
 
             {activeTab === 'profile' && (
               <ProfileScreen
@@ -363,12 +374,11 @@ export default function App() {
             )}
           </View>
 
-          {/* Bottom Navigation Bar - Hidden on Mitra AI chat screen for full-screen conversational interface */}
+          {/* Bottom Navigation Bar — Hidden in Chat view as in wireframe sketch */}
           {activeTab !== 'mitra' && (
             <BottomNavBar
               activeTab={activeTab}
               onTabChange={navigateToTab}
-              eligibleCount={eligibleCount}
               currentLanguage={currentLanguage}
             />
           )}

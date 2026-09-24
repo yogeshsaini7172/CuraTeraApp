@@ -93,13 +93,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <View style={styles.logoBadgeContainer}>
             <View style={styles.logoBadge}>
               <Image
-                source={require('../../assets/YojnaLogo.png')}
+                source={require('../../assets/CuraTera_Logo.png')}
                 style={styles.logoImage}
-                resizeMode="contain"
+                resizeMode="cover"
               />
             </View>
           </View>
-          <Text style={styles.brandTitle}>YojnaMitra</Text>
+          <Text style={styles.brandTitle}>CuraTera</Text>
           <Text style={styles.brandSubtitle}>
             {isEn ? 'Citizen Welfare & Schemes Assistant' : 'नागरिक कल्याण एवं योजना सहायक'}
           </Text>
@@ -354,9 +354,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   logoImage: {
-    width: 66,
-    height: 66,
-    marginTop: 6,
+    width: '100%',
+    height: '100%',
+    borderRadius: 39,
   },
   brandTitle: {
     fontSize: 28,

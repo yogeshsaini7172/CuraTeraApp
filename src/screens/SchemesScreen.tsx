@@ -11,13 +11,25 @@ import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { Scheme } from '../types';
 import { SchemeCard } from '../components/SchemeCard';
-import { SupportedLanguage, translations } from '../i18n/translations';
+import { SupportedLanguage } from '../i18n/translations';
 
 interface SchemesScreenProps {
   schemes: Scheme[];
   onViewDocs: (scheme: Scheme) => void;
+  onOpenMitraAI: () => void;
   currentLanguage?: SupportedLanguage;
 }
+
+// Clean WhatsApp-style category filter options (no emojis)
+const FILTER_OPTIONS = [
+  { id: 'all',       labelHi: 'सभी',      labelEn: 'All'      },
+  { id: 'farming',   labelHi: 'किसान',    labelEn: 'Farming'  },
+  { id: 'education', labelHi: 'शिक्षा',   labelEn: 'Education'},
+  { id: 'health',    labelHi: 'स्वास्थ्य', labelEn: 'Health'   },
+  { id: 'housing',   labelHi: 'आवास',     labelEn: 'Housing'  },
+  { id: 'business',  labelHi: 'रोजगार',   labelEn: 'Business' },
+  { id: 'pension',   labelHi: 'पेंशन',    labelEn: 'Pension'  },
+];
 
 export const SchemesScreen: React.FC<SchemesScreenProps> = ({
   schemes,
@@ -26,117 +38,103 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
-  const t = translations[currentLanguage];
   const isEn = currentLanguage === 'en';
 
-  // Filter chips list
-  const filterOptions = [
-    { id: 'all', label: isEn ? 'All Schemes' : 'सभी योजनाएं' },
-    { id: 'housing', label: isEn ? 'Housing' : 'आवास' },
-    { id: 'farming', label: isEn ? 'Farming' : 'किसान' },
-    { id: 'health', label: isEn ? 'Health' : 'स्वास्थ्य' },
-    { id: 'education', label: isEn ? 'Education' : 'शिक्षा' },
-    { id: 'business', label: isEn ? 'Business' : 'रोजगार' },
-    { id: 'pension', label: isEn ? 'Pension' : 'पेंशन' },
-  ];
-
-  // Filtering schemes by search text & category pill
   const filteredSchemes = schemes.filter((s) => {
     const matchesCategory = activeFilter === 'all' || s.category === activeFilter;
-    const matchesSearch =
-      s.titleHi.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.titleEn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.benefitHi.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.benefitEn.toLowerCase().includes(searchQuery.toLowerCase());
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = !query ||
+      s.titleHi.toLowerCase().includes(query) ||
+      s.titleEn.toLowerCase().includes(query) ||
+      s.benefitHi.toLowerCase().includes(query) ||
+      s.benefitEn.toLowerCase().includes(query);
     return matchesCategory && matchesSearch;
   });
 
   return (
     <View style={styles.container}>
-      {/* 1. Search Bar */}
-      <View style={styles.searchContainer}>
+      {/* ── 1. Fixed Search Bar (ALWAYS VISIBLE — DOES NOT SCROLL) ── */}
+      <View style={styles.fixedSearchWrapper}>
         <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={Colors.blue.primary} />
+          <Ionicons name="search" size={18} color={Colors.white.muted} />
           <TextInput
             style={styles.searchInput}
-            placeholder={t.searchPlaceholder}
+            placeholder={isEn ? 'Search schemes...' : 'योजना खोजें...'}
             placeholderTextColor={Colors.white.muted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Ionicons name="close-circle" size={18} color={Colors.orange.primary} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* 2. Category Filter Horizontal Pills */}
-      <View style={styles.filterWrapper}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-        >
-          {filterOptions.map((filter) => {
-            const isActive = activeFilter === filter.id;
-            return (
-              <TouchableOpacity
-                key={filter.id}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
-                onPress={() => setActiveFilter(filter.id)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isActive && styles.filterChipTextActive,
-                  ]}
-                >
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* 3. Results Count Bar */}
-      <View style={styles.countBar}>
-        <Text style={styles.countText}>
-          {t.schemesFound(filteredSchemes.length)}
-        </Text>
-      </View>
-
-      {/* 4. Schemes Vertical Scroll List */}
+      {/* ── 2. ScrollView (Filter below search bar scrolls with schemes!) ── */}
       <ScrollView
         style={styles.listArea}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {filteredSchemes.length > 0 ? (
-          filteredSchemes.map((scheme) => (
-            <SchemeCard
-              key={scheme.id}
-              scheme={scheme}
-              onViewDocs={onViewDocs}
-              currentLanguage={currentLanguage}
-            />
-          ))
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="search-outline" size={48} color={Colors.blue.primary} />
-            <Text style={styles.emptyTitle}>
-              {isEn ? 'No Schemes Found' : 'कोई योजना नहीं मिली'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {isEn
-                ? 'Try searching with another keyword'
-                : 'कृपया कोई दूसरा नाम या श्रेणी खोजकर देखें'}
-            </Text>
-          </View>
-        )}
+        {/* Category Pills (Inside ScrollView — scrolls away when user scrolls down schemes!) */}
+        <View style={styles.pillsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsScroll}
+            nestedScrollEnabled={true}
+          >
+            {FILTER_OPTIONS.map((f) => {
+              const isActive = activeFilter === f.id;
+              const label = isEn ? f.labelEn : f.labelHi;
+              return (
+                <TouchableOpacity
+                  key={f.id}
+                  style={[styles.pill, isActive && styles.pillActive]}
+                  onPress={() => setActiveFilter(f.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Schemes List (Clean WhatsApp chat list style) */}
+        <View style={styles.schemesList}>
+          {filteredSchemes.length > 0 ? (
+            filteredSchemes.map((scheme) => (
+              <SchemeCard
+                key={scheme.id}
+                scheme={scheme}
+                onViewDocs={onViewDocs}
+                currentLanguage={currentLanguage}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="search-outline" size={40} color="#CBD5E1" />
+              <Text style={styles.emptyTitle}>
+                {isEn ? 'No schemes found' : 'कोई योजना नहीं मिली'}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {isEn
+                  ? 'Try a different keyword or category'
+                  : 'कोई दूसरा शब्द या श्रेणी आज़माएं'}
+              </Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -145,13 +143,15 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white.canvas,
+    backgroundColor: '#FFFFFF',
   },
-  searchContainer: {
+
+  // 1. Fixed Search Bar at Top (Never scrolls)
+  fixedSearchWrapper: {
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 4,
     paddingBottom: 8,
-    backgroundColor: Colors.white.pure,
   },
   searchBox: {
     flexDirection: 'row',
@@ -159,67 +159,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 42,
     gap: 8,
-    borderWidth: 1,
-    borderColor: Colors.white.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: Colors.white.textDark,
+    color: '#0F172A',
+    paddingVertical: 0,
   },
-  filterWrapper: {
-    backgroundColor: Colors.white.pure,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.white.border,
-    paddingBottom: 10,
-  },
-  filterScroll: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: Colors.white.border,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.blue.dark,
-    borderColor: Colors.blue.dark,
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white.muted,
-  },
-  filterChipTextActive: {
-    color: Colors.white.pure,
-    fontWeight: '700',
-  },
-  countBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  countText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.white.muted,
-  },
+
+  // 2. Scrollable Area (Filter + WhatsApp List)
   listArea: {
     flex: 1,
   },
   listContent: {
-    paddingBottom: 110,
+    paddingBottom: 80,
   },
+
+  // Category Filter Pills (Scrolls away with the schemes)
+  pillsWrapper: {
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  pillsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  pillActive: {
+    backgroundColor: '#0F2942',
+    borderColor: '#0F2942',
+  },
+  pillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  pillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // Schemes List (Cards style matching Home For You)
+  schemesList: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    gap: 10,
+  },
+
+  // Empty State
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
-    paddingHorizontal: 20,
+    paddingHorizontal: 32,
   },
   emptyTitle: {
     fontSize: 16,
@@ -228,8 +229,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   emptySubtitle: {
-    fontSize: 12,
-    color: Colors.white.muted,
+    fontSize: 13,
+    color: '#94A3B8',
     marginTop: 4,
     textAlign: 'center',
   },

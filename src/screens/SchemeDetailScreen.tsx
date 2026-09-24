@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Linking,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Scheme } from '../types';
@@ -32,10 +33,12 @@ export const SchemeDetailScreen: React.FC<SchemeDetailScreenProps> = ({
 
   const title = isEn ? scheme.titleEn : scheme.titleHi;
   const ministry = isEn ? scheme.ministryEn : scheme.ministryHi;
-  const categoryLabel = isEn ? scheme.categoryLabelEn : scheme.categoryLabelHi;
+  const categoryLabel = isEn
+    ? (scheme.categoryLabelEn || scheme.category)
+    : (scheme.categoryLabelHi || scheme.category);
   const benefitAmount = isEn
-    ? scheme.benefitAmountEn || scheme.benefitAmount
-    : scheme.benefitAmountHi || scheme.benefitAmount;
+    ? (scheme.benefitAmountEn || scheme.benefitAmount)
+    : (scheme.benefitAmountHi || scheme.benefitAmount);
   const benefit = isEn ? scheme.benefitEn : scheme.benefitHi;
   const description = isEn ? scheme.descriptionEn : scheme.descriptionHi;
   const whyEligible = isEn ? scheme.whyEligibleEn : scheme.whyEligibleHi;
@@ -51,174 +54,154 @@ export const SchemeDetailScreen: React.FC<SchemeDetailScreenProps> = ({
     }
   };
 
-  // Split eligibility criteria
+  // Split eligibility criteria cleanly
   const eligibilityCriteria = whyEligible
-    .split(/[|✓]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+    ? whyEligible
+        .split(/[|✓]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    : [];
 
   return (
     <View style={styles.container}>
-      {/* 1. Clean Minimal Header Bar */}
+      {/* 1. Header: Pure minimal icons without surrounding boxes */}
       <View style={styles.headerBar}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.headerIconBtn}
           onPress={onBack}
-          activeOpacity={0.7}
+          activeOpacity={0.6}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Ionicons name="arrow-back" size={22} color="#0A2540" />
+          <Ionicons name="arrow-back" size={24} color="#0A2540" />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {isEn ? 'Scheme Details' : 'योजना विवरण'}
-          </Text>
-        </View>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {isEn ? 'Scheme Details' : 'योजना विवरण'}
+        </Text>
 
         <TouchableOpacity
-          style={[styles.audioButton, isSpeaking && styles.audioButtonActive]}
+          style={styles.headerIconBtn}
           onPress={onToggleSpeech}
-          activeOpacity={0.7}
+          activeOpacity={0.6}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Ionicons
             name={isSpeaking ? 'volume-high' : 'volume-medium-outline'}
-            size={18}
-            color={isSpeaking ? '#FFFFFF' : '#0A2540'}
+            size={24}
+            color={isSpeaking ? '#16A34A' : '#0A2540'}
           />
         </TouchableOpacity>
       </View>
 
-      {/* 2. Clean Continuous Page Content (No Rainbows, No Icon Clutter) */}
+      {/* 2. Scrollable Body: Clean, text-focused, no icon clutter */}
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Meta: Category & 100% Eligible Badge */}
-        <View style={styles.metaRow}>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryBadgeText}>{categoryLabel}</Text>
+        {/* Main Card: Home page 'For You' style */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroCardTop}>
+            <Text style={styles.categoryText}>{categoryLabel}</Text>
+            {scheme.isEligible && (
+              <View style={styles.eligibleBadge}>
+                <Text style={styles.eligibleBadgeText}>
+                  {isEn ? 'Eligible' : 'पात्र'}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {scheme.isEligible && (
-            <View style={styles.eligibleBadge}>
-              <Text style={styles.eligibleBadgeText}>
-                {isEn ? '100% Eligible' : '100% पात्र'}
-              </Text>
-            </View>
-          )}
+          <Text style={styles.schemeTitle}>{title}</Text>
+          {ministry ? <Text style={styles.ministryText}>{ministry}</Text> : null}
+
+          {/* Clean Benefit Highlight */}
+          <View style={styles.benefitContainer}>
+            <Text style={styles.benefitAmountText}>{benefitAmount}</Text>
+            {benefit ? <Text style={styles.benefitSubText}>{benefit}</Text> : null}
+          </View>
         </View>
 
-        {/* Scheme Title & Ministry */}
-        <Text style={styles.schemeTitle}>{title}</Text>
-        <Text style={styles.ministryText}>{ministry}</Text>
+        {/* Section: Overview / Description (if available) */}
+        {description ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeading}>
+              {isEn ? 'Overview' : 'विवरण'}
+            </Text>
+            <Text style={styles.bodyText}>{description}</Text>
+          </View>
+        ) : null}
 
-        {/* Financial Benefit (Clean Neutral Block, No Heavy Green Box) */}
-        <View style={styles.benefitBlock}>
-          <Text style={styles.benefitLabel}>
-            {isEn ? 'DIRECT FINANCIAL BENEFIT' : 'सीधा आर्थिक लाभ'}
-          </Text>
-          <Text style={styles.benefitAmountText}>{benefitAmount}</Text>
-          <Text style={styles.benefitSubText}>{benefit}</Text>
-          {description ? (
-            <Text style={styles.benefitDescText}>{description}</Text>
-          ) : null}
-        </View>
-
-        <View style={styles.sectionDivider} />
-
-        {/* SECTION 1: Why You Are Eligible */}
+        {/* Section: Eligibility Criteria (Clean text list) */}
         {eligibilityCriteria.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {isEn ? 'Why You Are Eligible' : 'आप क्यों पात्र हैं'}
+            <Text style={styles.sectionHeading}>
+              {isEn ? 'Eligibility' : 'पात्रता'}
             </Text>
-            <Text style={styles.sectionSubtitle}>
-              {isEn
-                ? 'Based on your verified citizen profile & land criteria'
-                : 'आपकी सत्यापित नागरिक प्रोफाइल एवं भूमि विवरण के आधार पर'}
-            </Text>
-
-            <View style={styles.criteriaWrap}>
+            <View style={styles.listWrap}>
               {eligibilityCriteria.map((crit, idx) => (
-                <View key={idx} style={styles.criteriaPill}>
-                  <Text style={styles.criteriaPillText}>{crit}</Text>
+                <View key={idx} style={styles.bulletRow}>
+                  <Text style={styles.bulletDot}>•</Text>
+                  <Text style={styles.bulletText}>{crit}</Text>
                 </View>
               ))}
             </View>
           </View>
         )}
 
-        <View style={styles.sectionDivider} />
-
-        {/* SECTION 2: Required Documents */}
+        {/* Section: Required Documents (Clean numbered list, no icon overload) */}
         {requiredDocs && requiredDocs.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {isEn ? 'Required Documents' : 'आवश्यक दस्तावेज'}
+            <Text style={styles.sectionHeading}>
+              {isEn ? 'Required Documents' : 'आवश्यक दस्तावेज़'}
             </Text>
-            <Text style={styles.sectionSubtitle}>
-              {isEn
-                ? 'Carry verified copies of these documents to apply:'
-                : 'आवेदन के लिए इन दस्तावेजों की सत्यापित प्रतियां आवश्यक हैं:'}
-            </Text>
-
-            <View style={styles.docList}>
+            <View style={styles.listWrap}>
               {requiredDocs.map((doc, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.docRow,
-                    idx === requiredDocs.length - 1 && styles.docRowLast,
-                  ]}
-                >
-                  <Text style={styles.docNumber}>{idx + 1}.</Text>
-                  <Text style={styles.docNameText}>{doc}</Text>
+                <View key={idx} style={styles.numberedRow}>
+                  <Text style={styles.numberLabel}>{idx + 1}.</Text>
+                  <Text style={styles.numberedText}>{doc}</Text>
                 </View>
               ))}
             </View>
           </View>
         )}
 
-        <View style={styles.sectionDivider} />
-
-        {/* SECTION 3: Assistance Note */}
-        <View style={styles.assistanceNote}>
-          <Text style={styles.assistanceTitle}>
-            {isEn ? 'Need Assistance with Application?' : 'आवेदन में सहायता चाहिए?'}
+        {/* Section: Assistance Note (Clean simple text, no heavy container) */}
+        <View style={styles.assistanceSection}>
+          <Text style={styles.assistanceHeading}>
+            {isEn ? 'Need Assistance?' : 'आवेदन में सहायता चाहिए?'}
           </Text>
-          <Text style={styles.assistanceDesc}>
+          <Text style={styles.assistanceBody}>
             {isEn
-              ? 'Carry these documents to your nearest Common Service Center (CSC) or e-Seva Kendra to apply with local sahayak guidance.'
-              : 'इन दस्तावेजों को अपने नजदीकी कॉमन सर्विस सेंटर (CSC) या ई-सेवा केंद्र पर ले जाकर स्थानीय सहायक की मदद से सीधे आवेदन करें।'}
+              ? 'Visit your nearest Common Service Center (CSC) or e-Seva Kendra with the above documents.'
+              : 'इन दस्तावेज़ों के साथ अपने नज़दीकी कॉमन सर्विस सेंटर (CSC) या ई-सेवा केंद्र पर जाएं।'}
           </Text>
         </View>
       </ScrollView>
 
-      {/* 3. Bottom Action Bar */}
+      {/* 3. Bottom Sticky Bar: Clean & Focused Action */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={styles.applyButton}
+          style={styles.applyBtn}
           onPress={handleOpenPortal}
           activeOpacity={0.85}
         >
-          <Text style={styles.applyButtonText}>
+          <Text style={styles.applyBtnText}>
             {isEn ? 'Apply on Official Portal ↗' : 'आधिकारिक पोर्टल पर जाएं ↗'}
           </Text>
         </TouchableOpacity>
 
-        {scheme.helplinePhone && (
+        {scheme.helplinePhone ? (
           <TouchableOpacity
-            style={styles.helplineButton}
-            onPress={() => onCallHelpline(scheme.helplinePhone)}
-            activeOpacity={0.8}
+            style={styles.helplineBtn}
+            onPress={() => onCallHelpline(scheme.helplinePhone!)}
+            activeOpacity={0.7}
           >
-            <Text style={styles.helplineButtonText}>
+            <Text style={styles.helplineBtnText}>
               {isEn ? 'Helpline' : 'हेल्पलाइन'}
             </Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -227,238 +210,183 @@ export const SchemeDetailScreen: React.FC<SchemeDetailScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
+
+  // 1. Header: Clean & minimal
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 48,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E2E8F0',
   },
-  backButton: {
-    width: 36,
-    height: 36,
+  headerIconBtn: {
+    padding: 6,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    paddingHorizontal: 12,
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#0A2540',
   },
-  audioButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  audioButtonActive: {
-    backgroundColor: '#0A2540',
-    borderColor: '#0A2540',
-  },
+
+  // 2. Body
   scrollArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    padding: 16,
     paddingBottom: 90,
   },
 
-  // Meta Badges
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  categoryBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  categoryBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  eligibleBadge: {
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-  },
-  eligibleBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#16A34A',
-  },
-
-  // Title & Ministry
-  schemeTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
-    lineHeight: 28,
-    marginBottom: 6,
-  },
-  ministryText: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-
-  // Clean Financial Benefit Block
-  benefitBlock: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+  // Hero Card (Like Home Page Card)
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 16,
   },
-  benefitLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1565C0',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  benefitAmountText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  benefitSubText: {
-    fontSize: 13.5,
-    fontWeight: '600',
-    color: '#334155',
-    lineHeight: 19,
-    marginBottom: 4,
-  },
-  benefitDescText: {
-    fontSize: 12.5,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-
-  // Section Divider
-  sectionDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 16,
-  },
-
-  // Sections
-  section: {
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 3,
-  },
-  sectionSubtitle: {
-    fontSize: 12.5,
-    color: '#64748B',
-    marginBottom: 12,
-  },
-
-  // Criteria Pills (Clean, no icons)
-  criteriaWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  criteriaPill: {
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  criteriaPillText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#1E293B',
-  },
-
-  // Document List (Clean numbered rows, no glowing icons)
-  docList: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-  },
-  docRow: {
+  heroCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    backgroundColor: '#FFFFFF',
-    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  docRowLast: {
-    borderBottomWidth: 0,
+  categoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
   },
-  docNumber: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#94A3B8',
-    width: 20,
+  eligibleBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  docNameText: {
-    flex: 1,
-    fontSize: 13.5,
-    fontWeight: '500',
+  eligibleBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  schemeTitle: {
+    fontSize: 18,
+    fontWeight: '800',
     color: '#0F172A',
+    lineHeight: 24,
+    marginBottom: 4,
+  },
+  ministryText: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  benefitContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+  },
+  benefitAmountText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0A2540',
+    marginBottom: 2,
+  },
+  benefitSubText: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
   },
 
-  // Assistance Note (Neutral clean)
-  assistanceNote: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 14,
+  // Content Sections
+  section: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 12,
   },
-  assistanceTitle: {
+  sectionHeading: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  bodyText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#334155',
+  },
+
+  // Lists (Pure text bullets & numbers, NO icons)
+  listWrap: {
+    gap: 8,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bulletDot: {
+    fontSize: 14,
+    color: '#64748B',
+    lineHeight: 20,
+  },
+  bulletText: {
+    flex: 1,
     fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 20,
+  },
+  numberedRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  numberLabel: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#64748B',
+    width: 20,
+    lineHeight: 20,
+  },
+  numberedText: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 20,
+  },
+
+  // Assistance Note
+  assistanceSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+  },
+  assistanceHeading: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
     marginBottom: 4,
   },
-  assistanceDesc: {
-    fontSize: 12.5,
+  assistanceBody: {
+    fontSize: 13,
     color: '#64748B',
-    lineHeight: 18,
+    lineHeight: 19,
   },
 
-  // Fixed Bottom Bar
+  // 3. Bottom Sticky Bar
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -468,29 +396,28 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'android' ? 12 : 24,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  applyButton: {
+  applyBtn: {
     flex: 2,
-    backgroundColor: '#1565C0',
-    height: 48,
+    backgroundColor: '#0A2540',
+    height: 46,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
   },
-  applyButtonText: {
+  applyBtnText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  helplineButton: {
+  helplineBtn: {
     flex: 1,
-    height: 48,
-    paddingHorizontal: 10,
+    height: 46,
     borderRadius: 10,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
@@ -498,9 +425,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  helplineButtonText: {
+  helplineBtnText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#0A2540',
   },
 });

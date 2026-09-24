@@ -1,50 +1,57 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
-import { Ionicons } from '../utils/icons';
-import { Colors } from '../theme/colors';
 import { Scheme } from '../types';
 import { SupportedLanguage } from '../i18n/translations';
 
 interface SchemeCardProps {
   scheme: Scheme;
   onViewDocs: (scheme: Scheme) => void;
-  isAudioEnabled?: boolean;
   currentLanguage?: SupportedLanguage;
 }
 
 export const SchemeCard: React.FC<SchemeCardProps> = ({
   scheme,
   onViewDocs,
-  currentLanguage = 'en',
+  currentLanguage = 'hi',
 }) => {
   const isEn = currentLanguage === 'en';
 
   const title = isEn ? scheme.titleEn : scheme.titleHi;
+  const categoryLabel = isEn
+    ? (scheme.categoryLabelEn || scheme.category)
+    : (scheme.categoryLabelHi || scheme.category);
+  const benefit = isEn
+    ? (scheme.benefitAmountEn || scheme.benefitAmount)
+    : (scheme.benefitAmountHi || scheme.benefitAmount);
 
   return (
     <TouchableOpacity
       style={styles.card}
       onPress={() => onViewDocs(scheme)}
-      activeOpacity={0.75}
+      activeOpacity={0.88}
     >
-      <View style={styles.mainCol}>
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
-
-        {scheme.isEligible && (
-          <View style={styles.eligiblePill}>
-            <Ionicons name="checkmark-circle-outline" size={15} color="#16A34A" />
-            <Text style={styles.eligiblePillText}>
-              {isEn ? 'Eligible' : 'पात्र'}
-            </Text>
-          </View>
-        )}
+      {/* Top Row: Category + Eligibility Tag + Details Arrow */}
+      <View style={styles.cardTop}>
+        <View style={styles.categoryWrap}>
+          <Text style={styles.categoryText}>{categoryLabel}</Text>
+          {scheme.isEligible && (
+            <View style={styles.eligibleBadge}>
+              <Text style={styles.eligibleBadgeText}>
+                {isEn ? 'Eligible' : 'पात्र'}
+              </Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.detailsText}>{isEn ? 'Details →' : 'विवरण →'}</Text>
       </View>
 
-      <View style={styles.arrowCircle}>
-        <Ionicons name="chevron-forward" size={18} color="#EA580C" />
-      </View>
+      {/* Scheme Title */}
+      <Text style={styles.title} numberOfLines={2}>
+        {title}
+      </Text>
+
+      {/* Benefit Amount */}
+      <Text style={styles.benefitAmount}>{benefit}</Text>
     </TouchableOpacity>
   );
 };
@@ -53,44 +60,52 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginVertical: 5,
-    marginHorizontal: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 0,
-    shadowOpacity: 0,
+    marginBottom: 5,
   },
-  mainCol: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0A2540',
-    lineHeight: 21,
-  },
-  eligiblePill: {
-    alignSelf: 'flex-start',
+  categoryWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
+    gap: 7,
   },
-  eligiblePillText: {
-    color: '#16A34A',
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  eligibleBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  eligibleBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  detailsText: {
     fontSize: 12,
     fontWeight: '700',
+    color: '#0A2540',
   },
-  arrowCircle: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 4,
+  title: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  benefitAmount: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#16A34A',
   },
 });
-

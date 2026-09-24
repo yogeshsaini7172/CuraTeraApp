@@ -42,12 +42,12 @@ export const LanguageSelectScreen: React.FC<LanguageSelectScreenProps> = ({
           <View style={styles.brandHeader}>
             <View style={styles.logoBadge}>
               <Image
-                source={require('../../assets/YojnaLogo.png')}
+                source={require('../../assets/CuraTera_Logo.png')}
                 style={styles.logoImage}
-                resizeMode="contain"
+                resizeMode="cover"
               />
             </View>
-            <Text style={styles.brandTitle}>YojnaMitra</Text>
+            <Text style={styles.brandTitle}>CuraTera</Text>
           </View>
 
           {/* 2. Main Title */}
@@ -205,9 +205,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   logoImage: {
-    width: 54,
-    height: 54,
-    marginTop: 6,
+    width: '100%',
+    height: '100%',
+    borderRadius: 34,
   },
   brandTitle: {
     fontSize: 22,

@@ -8,12 +8,24 @@ import {
   TextInput,
   Platform,
   Vibration,
+  Keyboard,
+  Image,
+  TouchableWithoutFeedback,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import Speech from '../utils/speech';
-import { Colors } from '../theme/colors';
-
 import { SupportedLanguage } from '../i18n/translations';
+import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker';
+import { pickDocumentAsync } from '../utils/documentPicker';
+import { recognizeSpeech } from '../utils/speechRecognizer';
+
+interface ChatAttachment {
+  uri?: string;
+  name: string;
+  type: 'image' | 'file';
+}
 
 interface ChatMessage {
   id: string;
@@ -22,14 +34,17 @@ interface ChatMessage {
   lang?: 'hi' | 'en';
   quickReplies?: string[];
   actionType?: 'view_schemes';
+  attachment?: ChatAttachment;
 }
 
 interface ChatScreenProps {
+  onBack?: () => void;
   onNavigateToSchemes: () => void;
   currentLanguage?: SupportedLanguage;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
+  onBack,
   onNavigateToSchemes,
   currentLanguage = 'hi',
 }) => {
@@ -37,24 +52,79 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const scrollViewRef = useRef<ScrollView>(null);
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
 
-  // Initial welcome message from Mitra AI
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-1',
-      sender: 'bot',
-      lang: isEn ? 'en' : 'hi',
-      text: isEn
-        ? 'Welcome! I am your YojnaMitra AI Assistant. 🙏\n\nAsk me anything about government welfare schemes!\n\nShall we start with 3 quick questions to check your eligibility?'
-        : 'नमस्ते! मैं आपका योजना मित्र (AI सहायक) हूँ। 🙏\n\nआप मुझसे सरकारी योजनाओं के बारे में कुछ भी पूछ सकते हैं!\n\nक्या हम आपकी पात्रता जांचने के लिए 3 आसान सवाल शुरू करें?',
-      quickReplies: isEn
-        ? ['Yes, start now 🚀', 'Tell me about schemes']
-        : ['हाँ, शुरू करें 🚀', 'योजनाओं के बारे में बताएं'],
-    },
-  ]);
+  // 1-line crisp greeting like ChatGPT (no paragraphs or overwhelming text)
+  const initialBotMessage: ChatMessage = {
+    id: 'msg-1',
+    sender: 'bot',
+    lang: isEn ? 'en' : 'hi',
+    text: isEn
+      ? 'Hello! How can I help you today?'
+      : 'नमस्ते! मैं आपकी क्या सहायता कर सकता हूँ?',
+    quickReplies: isEn
+      ? ['Check Eligibility 🔍', 'Explore Schemes 📋']
+      : ['पात्रता जांचें 🔍', 'सरकारी योजनाएं 📋'],
+  };
 
-  // Multilingual profiling questionnaire (Hindi & English)
+  const [messages, setMessages] = useState<ChatMessage[]>([initialBotMessage]);
+
+  // Keyboard height listener to smoothly elevate input pill
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // Text-to-speech helper: speaks aloud via native Android TTS engine
+  const handleSpeak = (text: string, lang: SupportedLanguage | 'hi' | 'en') => {
+    Speech.stop();
+    setIsSpeaking(true);
+    // Remove emojis and symbols for crisp TTS
+    const cleanText = text.replace(/[^\w\s\u0900-\u097F₹,.]/gi, '').trim();
+    Speech.speak(cleanText, {
+      language: lang === 'hi' ? 'hi' : 'en',
+      pitch: 1.0,
+      rate: 0.95,
+      onDone: () => setIsSpeaking(false),
+      onStopped: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+  };
+
+  // Speak welcome message aloud when screen opens
+  useEffect(() => {
+    const welcomeTimer = setTimeout(() => {
+      handleSpeak(initialBotMessage.text, currentLanguage);
+    }, 450);
+
+    return () => {
+      clearTimeout(welcomeTimer);
+      Speech.stop();
+      setIsSpeaking(false);
+    };
+  }, [currentLanguage]);
+
+  // Multilingual profiling questionnaire
   const profilingSteps = {
     hi: [
       {
@@ -86,147 +156,293 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     ],
   };
 
-  // Language detector: Auto-detects Hindi vs English like Google Assistant
-  const detectLanguage = (text: string): 'hi' | 'en' => {
-    // Check if contains Devanagari script
-    const hasDevanagari = /[\u0900-\u097F]/.test(text);
-    if (hasDevanagari) return 'hi';
-
-    // Check common Roman Hindi / Hinglish keywords
-    const lower = text.toLowerCase();
-    const hinglishWords = ['kisan', 'yojna', 'ghar', 'makan', 'paisa', 'chahiye', 'namaste', 'batao', 'kaise', 'haan', 'madad'];
-    const isHinglish = hinglishWords.some((w) => lower.includes(w));
-    if (isHinglish) return 'hi';
-
-    return 'en';
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 150);
   };
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    scrollToBottom();
   }, [messages]);
 
-  // Read message aloud using Speech API with detected language code
-  const handleSpeak = (text: string, lang: 'hi' | 'en' = 'hi') => {
-    Speech.stop();
-    Speech.speak(text, {
-      language: lang === 'hi' ? 'hi-IN' : 'en-IN',
-      pitch: 1.0,
-      rate: 0.95,
-    });
+  // Top header actions: Toggle speaker sound
+  const handleToggleSpeaker = () => {
+    if (isSpeaking) {
+      Speech.stop();
+      setIsSpeaking(false);
+    } else {
+      const lastBotMsg = [...messages].reverse().find((m) => m.sender === 'bot');
+      if (lastBotMsg) {
+        handleSpeak(lastBotMsg.text, currentLanguage);
+      }
+    }
   };
 
-  // Handle user selecting a quick reply chip or entering text
-  const handleProcessUserResponse = (input: string) => {
-    const detectedLang = detectLanguage(input);
+  // Top header actions: Reset conversation
+  const handleRefreshChat = () => {
+    Speech.stop();
+    setIsSpeaking(false);
+    Vibration.vibrate(40);
+    setCurrentStep(0);
+    setInputText('');
+    setPendingAttachment(null);
+    setShowAttachmentMenu(false);
+    setMessages([initialBotMessage]);
+    setTimeout(() => {
+      handleSpeak(initialBotMessage.text, currentLanguage);
+    }, 300);
+  };
 
-    // Add user message
+  // Photo / File Attachment Handlers (ChatGPT-style)
+  const handlePickFromCamera = async () => {
+    setShowAttachmentMenu(false);
+    setTimeout(async () => {
+      try {
+        const result = await launchCameraAsync();
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          setPendingAttachment({
+            uri: asset.uri,
+            name: asset.fileName || (isEn ? 'Camera_Photo.jpg' : 'कैमरा_फ़ोटो.jpg'),
+            type: 'image',
+          });
+        }
+      } catch (err) {
+        console.warn('Camera error:', err);
+      }
+    }, 150);
+  };
+
+  const handlePickFromGallery = async () => {
+    setShowAttachmentMenu(false);
+    setTimeout(async () => {
+      try {
+        const result = await launchImageLibraryAsync();
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          setPendingAttachment({
+            uri: asset.uri,
+            name: asset.fileName || (isEn ? 'Uploaded_Photo.jpg' : 'गैलरी_फ़ोटो.jpg'),
+            type: 'image',
+          });
+        }
+      } catch (err) {
+        console.warn('Gallery error:', err);
+      }
+    }, 150);
+  };
+
+  const handlePickDocument = async () => {
+    setShowAttachmentMenu(false);
+    setTimeout(async () => {
+      try {
+        const result = await pickDocumentAsync();
+        if (!result.cancelled && result.name) {
+          setPendingAttachment({
+            uri: result.uri,
+            name: result.name,
+            type: 'file',
+          });
+        }
+      } catch (err) {
+        console.warn('Document picker error:', err);
+      }
+    }, 150);
+  };
+
+  // Process user text / quick-replies / attachments
+  const handleProcessUserResponse = (userText: string, attachment?: ChatAttachment) => {
+    const textToAnalyze = userText.trim() || (attachment ? attachment.name : '');
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: `usr-${Date.now()}`,
       sender: 'user',
-      text: input,
-      lang: detectedLang,
+      text: userText,
+      lang: currentLanguage,
+      attachment,
     };
 
     setMessages((prev) => [...prev, userMsg]);
 
-    // Bot response logic tailored to user's language
     setTimeout(() => {
-      const steps = profilingSteps[detectedLang];
+      let botResponse: ChatMessage;
 
-      if (currentStep < steps.length) {
-        const step = steps[currentStep];
-        const botMsg: ChatMessage = {
+      if (attachment) {
+        botResponse = {
           id: `bot-${Date.now()}`,
           sender: 'bot',
-          lang: detectedLang,
-          text: step.question,
-          quickReplies: step.options,
-        };
-        setMessages((prev) => [...prev, botMsg]);
-        handleSpeak(step.question, detectedLang);
-        setCurrentStep((prev) => prev + 1);
-      } else {
-        // Final congratulations message in matched language
-        const finalText =
-          detectedLang === 'hi'
-            ? '🎉 बधाई हो! आपकी जानकारी के आधार पर आपके लिए 4 प्रमुख योजनाएं 100% पात्र पाई गई हैं:\n\n1. प्रधानमंत्री आवास योजना (ग्रामीण) - ₹1,20,000\n2. पीएम किसान सम्मान निधि - ₹6,000 / वर्ष\n3. आयुष्मान भारत योजना - ₹5,00,000 मुफ्त इलाज\n\nआप अभी इनका विवरण और कागजात देख सकते हैं।'
-            : '🎉 Congratulations! Based on your profile, you are 100% eligible for 4 flagship government schemes:\n\n1. Pradhan Mantri Awas Yojana (Rural) - ₹1,20,000\n2. PM-Kisan Samman Nidhi - ₹6,000 / year\n3. Ayushman Bharat Yojana - ₹5 Lakh free health cover\n\nYou can view full details and required documents now.';
-
-        const finalReplies =
-          detectedLang === 'hi'
-            ? ['📋 मेरी पात्र योजनाएं देखें ↗', 'कागजात चेकलिस्ट देखें']
-            : ['📋 View Eligible Schemes ↗', 'Check Required Documents'];
-
-        const finalMsg: ChatMessage = {
-          id: `bot-final-${Date.now()}`,
-          sender: 'bot',
-          lang: detectedLang,
-          text: finalText,
-          quickReplies: finalReplies,
+          lang: currentLanguage,
+          text: isEn
+            ? `Received your file (${attachment.name}). You are eligible for PM Housing & Welfare Schemes!`
+            : `दस्तावेज़ प्राप्त हुआ (${attachment.name})। आप PM आवास व कल्याणकारी योजनाओं के लिए पात्र हैं!`,
+          quickReplies: isEn
+            ? ['View Schemes 🚀', 'Ask another question']
+            : ['योजनाएं देखें 🚀', 'और सवाल पूछें'],
           actionType: 'view_schemes',
         };
-        setMessages((prev) => [...prev, finalMsg]);
-        handleSpeak(
-          detectedLang === 'hi'
-            ? 'बधाई हो! आपकी जानकारी के आधार पर आप 4 प्रमुख योजनाओं के लिए पात्र हैं।'
-            : 'Congratulations! You are eligible for 4 major welfare schemes.',
-          detectedLang
-        );
+      } else if (
+        userText.includes('पात्रता') ||
+        userText.includes('Eligibility') ||
+        userText.includes('शुरू') ||
+        userText.includes('Start')
+      ) {
+        setCurrentStep(1);
+        const q = profilingSteps[currentLanguage][0];
+        botResponse = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          lang: currentLanguage,
+          text: q.question,
+          quickReplies: q.options,
+        };
+      } else if (
+        userText.includes('योजनाएं') ||
+        userText.includes('Schemes')
+      ) {
+        botResponse = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          lang: currentLanguage,
+          text: isEn
+            ? 'You have multiple government welfare schemes available in Farming, Housing, and Healthcare.'
+            : 'आपके लिए कृषि, आवास और स्वास्थ्य संबंधी कई सरकारी योजनाएं उपलब्ध हैं।',
+          quickReplies: isEn
+            ? ['View Schemes 🚀', 'Check Eligibility 🔍']
+            : ['योजनाएं देखें 🚀', 'पात्रता जांचें 🔍'],
+          actionType: 'view_schemes',
+        };
+      } else if (currentStep === 1) {
+        setCurrentStep(2);
+        const q = profilingSteps[currentLanguage][1];
+        botResponse = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          lang: currentLanguage,
+          text: q.question,
+          quickReplies: q.options,
+        };
+      } else if (currentStep === 2) {
+        setCurrentStep(3);
+        const q = profilingSteps[currentLanguage][2];
+        botResponse = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          lang: currentLanguage,
+          text: q.question,
+          quickReplies: q.options,
+        };
+      } else {
+        botResponse = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          lang: currentLanguage,
+          text: isEn
+            ? 'Based on your profile, you are eligible for PM-Kisan, PM-Awas, and Ayushman Bharat!'
+            : 'आपके प्रोफाइल अनुसार आप PM-किसान, PM-आवास और आयुष्मान भारत के लिए पात्र हैं!',
+          quickReplies: isEn
+            ? ['View Eligible Schemes 🚀', 'Ask another question']
+            : ['योजनाएं देखें 🚀', 'और सवाल पूछें'],
+          actionType: 'view_schemes',
+        };
       }
+
+      setMessages((prev) => [...prev, botResponse]);
+      // Speak AI response aloud in user's selected language
+      handleSpeak(botResponse.text, currentLanguage);
     }, 600);
   };
 
-  // Toggle Voice Input simulation with Haptic vibration
-  const handleToggleVoice = () => {
-    Vibration.vibrate(20);
-    if (!isListening) {
-      setIsListening(true);
-      // Simulate speech recognition result after 2.2 seconds
-      setTimeout(() => {
-        setIsListening(false);
-        handleProcessUserResponse('मुझे पक्का मकान और किसान योजना चाहिए');
-      }, 2200);
-    } else {
+  const handleToggleVoice = async () => {
+    Speech.stop();
+    setIsSpeaking(false);
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    setIsListening(true);
+    Vibration.vibrate(40);
+
+    try {
+      const recognized = await recognizeSpeech(currentLanguage);
+      if (recognized && recognized.trim().length > 0) {
+        // Just like YouTube / Google: write spoken text into the input field!
+        setInputText(recognized.trim());
+      }
+    } catch (err: any) {
+      console.log('Voice recognition notice:', err);
+    } finally {
       setIsListening(false);
     }
   };
 
-  // Handle typed text submission
   const handleSendText = () => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !pendingAttachment) return;
     const text = inputText;
+    const attachment = pendingAttachment;
     setInputText('');
-    handleProcessUserResponse(text);
+    setPendingAttachment(null);
+    setShowAttachmentMenu(false);
+    handleProcessUserResponse(text, attachment || undefined);
   };
 
   return (
     <View style={styles.container}>
-      {/* Live Matched Schemes Floating Pill */}
-      <View style={styles.matchedHeader}>
-        <View style={styles.matchedBadge}>
-          <View style={styles.greenPulse} />
-          <Text style={styles.matchedText}>
-            {currentStep >= 3
-              ? (isEn ? '🔵 4 Schemes Matched' : '🔵 4 योजनाएं मैच हुईं')
-              : (isEn ? '🟠 Matching Eligibility...' : '🟠 पात्रता मिलान जारी है...')}
-          </Text>
+      {/* ── 1. Top Header: Clean, simple (No surrounding color boxes) ── */}
+      <View style={styles.chatHeader}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={() => {
+              Speech.stop();
+              onBack?.();
+            }}
+            style={styles.headerIconBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityLabel={isEn ? 'Go back' : 'पीछे जाएं'}
+          >
+            <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          </TouchableOpacity>
+          <Text style={styles.chatHeaderTitle}>CuraTera</Text>
         </View>
-        <TouchableOpacity
-          style={styles.schemesButton}
-          onPress={onNavigateToSchemes}
-        >
-          <Text style={styles.schemesButtonText}>
-            {isEn ? 'View Schemes ↗' : 'योजनाएं देखें ↗'}
-          </Text>
-        </TouchableOpacity>
+
+        <View style={styles.headerRight}>
+          {/* Speaker Icon: Toggle speech audio on / off */}
+          <TouchableOpacity
+            onPress={handleToggleSpeaker}
+            style={styles.headerIconBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            accessibilityLabel={isEn ? 'Speaker' : 'आवाज़'}
+          >
+            <Ionicons
+              name={isSpeaking ? 'volume-high' : 'volume-medium-outline'}
+              size={23}
+              color="#0F172A"
+            />
+          </TouchableOpacity>
+
+          {/* Simple Refresh Button */}
+          <TouchableOpacity
+            onPress={handleRefreshChat}
+            style={styles.headerIconBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            accessibilityLabel={isEn ? 'Refresh chat' : 'चैट रीफ्रेश करें'}
+          >
+            <Ionicons name="refresh-outline" size={23} color="#0F172A" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Messages Scroll Area */}
+      {/* ── 2. Messages Scroll Area ── */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {messages.map((msg) => (
           <View
@@ -236,13 +452,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               msg.sender === 'user' ? styles.userWrap : styles.botWrap,
             ]}
           >
-            {/* Bot Avatar */}
-            {msg.sender === 'bot' && (
-              <View style={styles.botAvatar}>
-                <Text style={{ fontSize: 16 }}>🤖</Text>
-              </View>
-            )}
-
             {/* Bubble Box */}
             <View
               style={[
@@ -250,22 +459,46 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 msg.sender === 'user' ? styles.userBubble : styles.botBubble,
               ]}
             >
-              <Text
-                style={[
-                  styles.bubbleText,
-                  msg.sender === 'user' ? styles.userText : styles.botText,
-                ]}
-              >
-                {msg.text}
-              </Text>
+              {/* User Attachment: Image */}
+              {msg.attachment?.type === 'image' && msg.attachment.uri && (
+                <View style={styles.bubbleImageWrapper}>
+                  <Image
+                    source={{ uri: msg.attachment.uri }}
+                    style={styles.bubbleImage}
+                    resizeMode="cover"
+                  />
+                </View>
+              )}
 
-              {/* Text-to-Speech audio button on Bot message */}
+              {/* User Attachment: Document */}
+              {msg.attachment?.type === 'file' && (
+                <View style={styles.bubbleDocChip}>
+                  <Ionicons name="document-text-outline" size={18} color="#0F172A" />
+                  <Text style={styles.bubbleDocText} numberOfLines={1}>
+                    {msg.attachment.name}
+                  </Text>
+                </View>
+              )}
+
+              {msg.text ? (
+                <Text
+                  style={[
+                    styles.bubbleText,
+                    msg.sender === 'user' ? styles.userText : styles.botText,
+                  ]}
+                >
+                  {msg.text}
+                </Text>
+              ) : null}
+
+              {/* Speaker audio button on AI message */}
               {msg.sender === 'bot' && (
                 <TouchableOpacity
                   style={styles.speakerRow}
-                  onPress={() => handleSpeak(msg.text, msg.lang || (isEn ? 'en' : 'hi'))}
+                  onPress={() => handleSpeak(msg.text, currentLanguage)}
+                  activeOpacity={0.7}
                 >
-                  <Ionicons name="volume-high" size={16} color={Colors.blue.primary} />
+                  <Ionicons name="volume-medium-outline" size={16} color="#475569" />
                   <Text style={styles.speakerLabel}>
                     {isEn ? 'Listen Aloud' : 'बोलकर सुनें'}
                   </Text>
@@ -275,19 +508,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         ))}
 
-        {/* Interactive Quick-Reply Answer Chips */}
+        {/* Quick-Reply Answer Chips */}
         {messages[messages.length - 1]?.quickReplies && (
           <View style={styles.chipsContainer}>
-            <Text style={styles.chipsHint}>
-              {isEn ? '👇 Select an answer below:' : '👇 नीचे से अपना उत्तर चुनें:'}
-            </Text>
             <View style={styles.chipsRow}>
               {messages[messages.length - 1].quickReplies!.map((reply, idx) => (
                 <TouchableOpacity
                   key={idx}
                   style={styles.chipButton}
                   onPress={() => {
-                    if (reply.includes('योजनाएं देखें') || reply.includes('View Eligible Schemes') || reply.includes('View Schemes')) {
+                    if (
+                      reply.includes('योजनाएं देखें') ||
+                      reply.includes('View Eligible Schemes') ||
+                      reply.includes('View Schemes') ||
+                      reply.includes('Explore Schemes')
+                    ) {
                       onNavigateToSchemes();
                     } else {
                       handleProcessUserResponse(reply);
@@ -303,51 +538,169 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         )}
       </ScrollView>
 
-      {/* Listening Wave Notification */}
+      {/* Voice Listening Notice */}
       {isListening && (
         <View style={styles.listeningNotice}>
-          <Ionicons name="mic" size={18} color={Colors.white.pure} />
+          <Ionicons name="mic" size={18} color="#FFFFFF" />
           <Text style={styles.listeningText}>
-            {isEn ? 'Mitra AI is listening... Speak now' : 'मित्र AI आपकी बात सुन रहा है... बोलिए'}
+            {isEn ? 'CuraTera AI is listening... Speak now' : 'CuraTera AI सुन रहा है... बोलिए'}
           </Text>
         </View>
       )}
 
-      {/* Bottom Input & Voice Bar */}
-      <View style={styles.inputBar}>
-        <TextInput
-          style={styles.textInput}
-          placeholder={isEn ? 'Type scheme question here...' : 'यहाँ अपना सवाल लिखें या बोलें...'}
-          placeholderTextColor={Colors.white.muted}
-          value={inputText}
-          onChangeText={setInputText}
-          onSubmitEditing={handleSendText}
-        />
+      {/* ── 3. Bottom Floating Pill: [ +  Ask anything...    🎙️ ] ── */}
+      <View
+        style={[
+          styles.inputContainer,
+          keyboardHeight > 0 && {
+            paddingBottom: keyboardHeight + 8,
+          },
+        ]}
+      >
+        {/* Attachment preview banner */}
+        {pendingAttachment && (
+          <View style={styles.pendingAttachmentBanner}>
+            <View style={styles.pendingAttachmentInfo}>
+              <Ionicons
+                name={pendingAttachment.type === 'image' ? 'image-outline' : 'document-text-outline'}
+                size={18}
+                color="#0A2540"
+              />
+              <Text style={styles.pendingAttachmentText} numberOfLines={1}>
+                {pendingAttachment.name}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setPendingAttachment(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle-outline" size={20} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {inputText.trim().length > 0 ? (
+        <View style={styles.inputPill}>
+          {/* Plus icon (Clean, NO surrounding background color box) */}
           <TouchableOpacity
-            style={styles.sendButton}
-            onPress={handleSendText}
-          >
-            <Ionicons name="send" size={18} color={Colors.white.pure} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.micButton,
-              isListening && styles.micButtonListening,
-            ]}
-            onPress={handleToggleVoice}
-            activeOpacity={0.8}
+            style={styles.plusBtn}
+            onPress={() => {
+              Keyboard.dismiss();
+              setShowAttachmentMenu((prev) => !prev);
+            }}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={isEn ? 'Attach photo or files' : 'फ़ोटो या फ़ाइलें जोड़ें'}
           >
             <Ionicons
-              name={isListening ? 'radio' : 'mic'}
-              size={22}
-              color={Colors.white.pure}
+              name={showAttachmentMenu ? 'close' : 'add'}
+              size={26}
+              color="#0F172A"
             />
           </TouchableOpacity>
-        )}
+
+          <TextInput
+            style={styles.textInput}
+            placeholder="Ask anything..."
+            placeholderTextColor="#94A3B8"
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSendText}
+            returnKeyType="send"
+            onFocus={() => setShowAttachmentMenu(false)}
+          />
+
+          {inputText.trim().length > 0 || pendingAttachment ? (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={handleSendText}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="send" size={20} color="#0A2540" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={handleToggleVoice}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={isListening ? 'radio' : 'mic-outline'}
+                size={23}
+                color={isListening ? '#EA580C' : '#0F172A'}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+
+      {/* ChatGPT-style Attachment Popup Menu in Transparent Modal */}
+      <Modal
+        visible={showAttachmentMenu}
+        transparent={true}
+        animationType="none"
+        onRequestClose={() => setShowAttachmentMenu(false)}
+      >
+        <View style={styles.modalContainer}>
+          {/* Backdrop: Touching anywhere outside closes the popup immediately */}
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.modalBackdrop}
+            onPress={() => setShowAttachmentMenu(false)}
+          />
+
+          {/* Compact Popup Card positioned above the + button */}
+          <View
+            style={[
+              styles.chatGptMenuCard,
+              {
+                bottom: (Platform.OS === 'android' ? 14 : 24) + 68,
+              },
+            ]}
+          >
+            {/* Camera */}
+            <TouchableOpacity
+              style={styles.chatGptMenuItem}
+              onPress={handlePickFromCamera}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera-outline" size={20} color="#0F172A" />
+              <Text style={styles.chatGptMenuText}>
+                {isEn ? 'Camera' : 'कैमरा'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.chatGptMenuDivider} />
+
+            {/* Photos */}
+            <TouchableOpacity
+              style={styles.chatGptMenuItem}
+              onPress={handlePickFromGallery}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="image-outline" size={20} color="#0F172A" />
+              <Text style={styles.chatGptMenuText}>
+                {isEn ? 'Photos' : 'फ़ोटो'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.chatGptMenuDivider} />
+
+            {/* Files */}
+            <TouchableOpacity
+              style={styles.chatGptMenuItem}
+              onPress={handlePickDocument}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="document-text-outline" size={20} color="#0F172A" />
+              <Text style={styles.chatGptMenuText}>
+                {isEn ? 'Files' : 'फ़ाइलें'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -355,123 +708,140 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white.canvas,
+    backgroundColor: '#FFFFFF',
   },
-  matchedHeader: {
+
+  // 1. Header: Simple & Clean (No background boxes around icons)
+  chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.white.pure,
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? 12 : 48,
+    paddingBottom: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.white.border,
+    borderBottomColor: '#F1F5F9',
   },
-  matchedBadge: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  greenPulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.orange.primary,
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  matchedText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.blue.dark,
+  headerIconBtn: {
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  schemesButton: {
-    backgroundColor: Colors.blue.light,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  chatHeaderTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  schemesButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.blue.primary,
-  },
+
+  // 2. Messages Area
   messageList: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   messageContent: {
     padding: 16,
     paddingBottom: 20,
   },
   messageBubbleWrap: {
-    flexDirection: 'row',
     marginBottom: 14,
-    maxWidth: '86%',
   },
   botWrap: {
     alignSelf: 'flex-start',
+    maxWidth: '88%',
   },
   userWrap: {
     alignSelf: 'flex-end',
-  },
-  botAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.blue.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-    marginTop: 2,
+    maxWidth: '78%',
   },
   bubble: {
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
   },
+  // AI Bubble: Simple Light Gray Theme
   botBubble: {
-    backgroundColor: Colors.white.pure,
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: Colors.white.border,
+    borderColor: '#E2E8F0',
     borderTopLeftRadius: 4,
-    elevation: 0,
-    shadowOpacity: 0,
   },
   userBubble: {
-    backgroundColor: Colors.blue.primary,
-    borderTopRightRadius: 4,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   bubbleText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
   botText: {
-    color: Colors.white.textDark,
+    color: '#0F172A',
   },
   userText: {
-    color: Colors.white.pure,
+    color: '#0F172A',
     fontWeight: '500',
   },
   speakerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     marginTop: 8,
-    paddingTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#E2E8F0',
   },
   speakerLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: Colors.blue.primary,
+    fontWeight: '700',
+    color: '#475569',
   },
-  chipsContainer: {
-    marginTop: 10,
-    marginBottom: 14,
-  },
-  chipsHint: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.white.muted,
+
+  // Attachment Bubble Elements
+  bubbleImageWrapper: {
     marginBottom: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  bubbleImage: {
+    width: 200,
+    height: 140,
+    borderRadius: 12,
+  },
+  bubbleDocChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  bubbleDocText: {
+    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+
+  // Quick Reply Chips
+  chipsContainer: {
+    marginTop: 6,
+    marginBottom: 12,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -479,70 +849,141 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chipButton: {
-    backgroundColor: Colors.white.pure,
-    paddingVertical: 9,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: Colors.blue.primary,
-    elevation: 0,
-    shadowOpacity: 0,
+    borderWidth: 1,
+    borderColor: '#0A2540',
   },
   chipButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.blue.primary,
+    color: '#0A2540',
   },
+
+  // Listening Notice
   listeningNotice: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.orange.primary,
+    backgroundColor: '#EA580C',
     paddingVertical: 6,
   },
   listeningText: {
-    color: Colors.white.pure,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
-  inputBar: {
+
+  // 3. Floating Bottom Pill [ +  Ask anything...    🎙️ ]
+  inputContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'android' ? 14 : 24,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+    position: 'relative',
+    zIndex: 100,
+  },
+  modalContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  pendingAttachmentBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white.pure,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'android' ? 14 : 26,
-    borderTopWidth: 1,
-    borderTopColor: Colors.white.border,
-    gap: 10,
+    justifyContent: 'space-between',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  pendingAttachmentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  pendingAttachmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0A2540',
+    flex: 1,
+  },
+  inputPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 25,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 14,
+    height: 50,
+  },
+  plusBtn: {
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   textInput: {
     flex: 1,
-    height: 44,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 22,
-    paddingHorizontal: 16,
+    fontSize: 15,
+    color: '#0F172A',
+    paddingVertical: 0,
+  },
+  actionBtn: {
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // 4. ChatGPT-style Small Floating Card Popover
+  chatGptMenuCard: {
+    position: 'absolute',
+    left: 16,
+    width: 155,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    zIndex: 1000,
+  },
+  chatGptMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  chatGptMenuText: {
     fontSize: 14,
-    color: Colors.white.textDark,
+    fontWeight: '600',
+    color: '#0F172A',
   },
-  micButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.orange.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micButtonListening: {
-    backgroundColor: '#C2410C',
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.blue.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chatGptMenuDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 10,
   },
 });

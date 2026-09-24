@@ -24,47 +24,57 @@ interface HeaderProps {
   eligibleCount: number;
   unreadCount?: number;
   currentLanguage?: SupportedLanguage;
+  themeLight?: string;
+  themeColor?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  isHome = false,
-  activeTab = 'home',
+  activeTab = 'schemes',
   onBackPress,
   activeDemoUser,
   onOpenUserSwitcher,
   onOpenNotifications,
   onNavigateToProfile,
-  eligibleCount,
-  unreadCount = 2,
+  unreadCount = 0,
   currentLanguage = 'hi',
+  themeLight,
+  themeColor,
 }) => {
   const isEn = currentLanguage === 'en';
-  const displayName = isEn
-    ? (activeDemoUser.nameEn || activeDemoUser.name)
-    : (activeDemoUser.nameHi || activeDemoUser.name);
+  const isRootTab = activeTab === 'home' || activeTab === 'schemes';
+  const showBack = !isRootTab && !!onBackPress;
 
-  // Dynamic screen title on non-home pages
+  const isHomeTab = activeTab === 'home';
+  const isSchemesTab = activeTab === 'schemes';
+
+  // Screen Title
   const getScreenTitle = () => {
     switch (activeTab) {
+      case 'home':
+        return 'CuraTera';
       case 'schemes':
-        return isEn ? 'Government Schemes' : 'सरकारी योजनाएं';
+        return isEn ? 'Schemes' : 'योजनाएं';
       case 'docs':
         return isEn ? 'Required Documents' : 'आवश्यक दस्तावेज';
       case 'profile':
         return isEn ? 'Citizen Profile' : 'नागरिक प्रोफाइल';
       case 'mitra':
-        return isEn ? 'Mitra AI Assistant' : 'मित्र AI सहायक';
+        return 'CuraTera';
       default:
-        return isEn ? 'YojnaMitra' : 'योजना मित्र';
+        return 'CuraTera';
     }
   };
 
-  // 1. Compact Header for non-home screens (Chat, Schemes, Docs, Profile) with Back Button
-  if (!isHome) {
-    return (
-      <View style={styles.compactHeaderContainer}>
-        {/* Left: Back Button & Screen Title */}
-        <View style={styles.compactNavLeft}>
+  return (
+    <View
+      style={[
+        styles.headerContainer,
+        isHomeTab && !!themeLight && { backgroundColor: themeLight },
+      ]}
+    >
+      {/* Left: Logo (on root tab except schemes) or Back Arrow (on sub tabs) + Title */}
+      <View style={styles.leftSection}>
+        {showBack ? (
           <TouchableOpacity
             onPress={onBackPress}
             style={styles.backButton}
@@ -72,86 +82,44 @@ export const Header: React.FC<HeaderProps> = ({
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             accessibilityLabel={isEn ? 'Go back' : 'पीछे जाएं'}
           >
-            <Ionicons name="arrow-back" size={23} color={Colors.white.pure} />
+            <Ionicons name="arrow-back" size={22} color="#0F172A" />
           </TouchableOpacity>
-          <Text style={styles.compactScreenTitle} numberOfLines={1}>
-            {getScreenTitle()}
-          </Text>
-        </View>
-
-        {/* Right: Bell Icon & Profile Avatar */}
-        <View style={styles.actionsContainer}>
-          {/* Bell Notification Icon */}
-          <TouchableOpacity
-            onPress={onOpenNotifications}
-            activeOpacity={0.7}
-            style={styles.bellButton}
-          >
-            <Ionicons name="notifications-outline" size={21} color={Colors.white.pure} />
-            {unreadCount > 0 && <View style={styles.notificationDot} />}
-          </TouchableOpacity>
-
-          {/* Profile Avatar Icon */}
-          <TouchableOpacity
-            style={styles.profileAvatarButton}
-            onPress={onNavigateToProfile || onOpenUserSwitcher}
-            activeOpacity={0.7}
-          >
-            {activeDemoUser.image ? (
-              <Image
-                source={activeDemoUser.image}
-                style={styles.avatarImg}
-                resizeMode="cover"
-              />
-            ) : (
-              <Text style={styles.avatarEmojiText}>{activeDemoUser.avatar}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Inverted Concave Bottom Corners */}
-        <View style={styles.concaveCornerLeft} pointerEvents="none">
-          <View style={styles.concaveCornerLeftCutout} />
-        </View>
-        <View style={styles.concaveCornerRight} pointerEvents="none">
-          <View style={styles.concaveCornerRightCutout} />
-        </View>
-      </View>
-    );
-  }
-
-  // 2. Full Expanded Header for Home Page
-  return (
-    <View style={styles.expandedHeaderContainer}>
-      {/* Top Row: App Logo, Name & Action Icons */}
-      <View style={styles.topRow}>
-        {/* App Logo & Title */}
-        <View style={styles.brandContainer}>
-          <View style={styles.logoBadge}>
+        ) : isSchemesTab ? null : (
+          <View style={styles.logoCircleWrapper}>
             <Image
-              source={require('../../assets/YojnaLogo.png')}
-              style={styles.fullLogo}
-              resizeMode="contain"
+              source={require('../../assets/CuraTera_Logo.png')}
+              style={styles.logoImg}
+              resizeMode="cover"
             />
           </View>
-          <Text style={styles.brandTitle}>
-            {isEn ? 'YojnaMitra' : 'योजना मित्र'}
-          </Text>
-        </View>
+        )}
+        <Text
+          style={[
+            styles.screenTitle,
+            isRootTab && styles.brandTitle,
+            isSchemesTab && styles.schemesTabTitle,
+          ]}
+          numberOfLines={1}
+        >
+          {getScreenTitle()}
+        </Text>
+      </View>
 
-        {/* Right Actions: Notification Bell + User Profile Avatar */}
-        <View style={styles.actionsContainer}>
-          {/* Notification Bell */}
-          <TouchableOpacity
-            onPress={onOpenNotifications}
-            activeOpacity={0.7}
-            style={styles.bellButton}
-          >
-            <Ionicons name="notifications-outline" size={22} color={Colors.white.pure} />
-            {unreadCount > 0 && <View style={styles.notificationDot} />}
-          </TouchableOpacity>
+      {/* Right: Notification Bell (Avatar hidden on schemes page) */}
+      <View style={styles.actionsContainer}>
+        {/* Bell Icon (Black) */}
+        <TouchableOpacity
+          onPress={onOpenNotifications}
+          activeOpacity={0.7}
+          style={styles.bellButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="notifications-outline" size={22} color="#0F172A" />
+          {unreadCount > 0 && <View style={styles.notificationDot} />}
+        </TouchableOpacity>
 
-          {/* User Profile Avatar with switcher action */}
+        {/* Profile Avatar Button - Hidden on schemes tab */}
+        {!isSchemesTab && (
           <TouchableOpacity
             style={styles.profileAvatarButton}
             onPress={onNavigateToProfile || onOpenUserSwitcher}
@@ -167,178 +135,27 @@ export const Header: React.FC<HeaderProps> = ({
               <Text style={styles.avatarEmojiText}>{activeDemoUser.avatar}</Text>
             )}
           </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Bottom Greeting Row: Citizen Name & Scheme Eligibility */}
-      <View style={styles.greetingRow}>
-        <View style={styles.greetingUserWrap}>
-          <Text style={styles.greetingGreeting}>
-            {isEn ? 'Welcome,' : 'नमस्ते,'}
-          </Text>
-          <Text style={styles.greetingName}>{displayName}</Text>
-        </View>
-
-        <View style={styles.statusPill}>
-          <View style={styles.liveDot} />
-          <Text style={styles.statusPillText}>
-            {isEn ? `${eligibleCount} Eligible` : `${eligibleCount} पात्र`}
-          </Text>
-        </View>
-      </View>
-
-      {/* Inverted Concave Bottom Corners */}
-      <View style={styles.concaveCornerLeft} pointerEvents="none">
-        <View style={styles.concaveCornerLeftCutout} />
-      </View>
-      <View style={styles.concaveCornerRight} pointerEvents="none">
-        <View style={styles.concaveCornerRightCutout} />
+        )}
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  // Expanded Home Header (flush to screen at top, inverted concave corners at bottom)
-  expandedHeaderContainer: {
-    backgroundColor: Colors.blue.dark,
-    paddingTop: Platform.OS === 'android' ? 14 : 52,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    elevation: 4,
-    shadowColor: Colors.blue.dark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  brandContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  logoBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: Colors.white.pure,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  fullLogo: {
-    width: 38,
-    height: 38,
-    marginTop: 5,
-  },
-  brandTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Colors.white.pure,
-    letterSpacing: 0.3,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  bellButton: {
-    position: 'relative',
-    padding: 2,
-  },
-  notificationDot: {
-    position: 'absolute',
-    top: 1,
-    right: 1,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: Colors.orange.primary,
-    borderWidth: 1.5,
-    borderColor: Colors.blue.dark,
-  },
-  profileAvatarButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  avatarImg: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-  },
-  avatarEmojiText: {
-    fontSize: 22,
-  },
-  greetingRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.10)',
-  },
-  greetingUserWrap: {
-    flexDirection: 'column',
-  },
-  greetingGreeting: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 11,
-    fontWeight: '400',
-  },
-  greetingName: {
-    color: Colors.white.pure,
-    fontSize: 15,
-    fontWeight: '700',
-    marginTop: 1,
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4ADE80',
-  },
-  statusPillText: {
-    color: '#4ADE80',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  // Compact Non-Home Header (flush to screen at top, inverted concave corners at bottom)
-  compactHeaderContainer: {
-    backgroundColor: Colors.blue.dark,
+  // Clean Simple White Header
+  headerContainer: {
+    backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'android' ? 12 : 48,
-    paddingBottom: 12,
+    paddingBottom: 6,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    elevation: 4,
-    shadowColor: Colors.blue.dark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
   },
-  compactNavLeft: {
+  leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 4,
     flex: 1,
     marginRight: 10,
   },
@@ -346,47 +163,84 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  compactScreenTitle: {
-    fontSize: 17,
+  logoCircleWrapper: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+    backgroundColor: '#0055FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  brandTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: -1,
+    textShadowColor: 'rgba(15, 23, 42, 0.2)',
+    textShadowOffset: { width: 0.5, height: 0.5 },
+    textShadowRadius: 1,
+  },
+  schemesTabTitle: {
+    fontSize: 22,
     fontWeight: '800',
-    color: Colors.white.pure,
-    letterSpacing: 0.2,
-    flexShrink: 1,
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-
-  // Inverted Concave Bottom Corners
-  concaveCornerLeft: {
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bellButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notificationDot: {
     position: 'absolute',
-    bottom: -18,
-    left: 0,
-    width: 18,
-    height: 18,
-    backgroundColor: Colors.blue.dark,
+    top: 7,
+    right: 7,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: Colors.orange.primary,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  profileAvatarButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  concaveCornerLeftCutout: {
-    width: 18,
-    height: 18,
-    backgroundColor: Colors.white.canvas,
-    borderTopLeftRadius: 18,
+  avatarImg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
-  concaveCornerRight: {
-    position: 'absolute',
-    bottom: -18,
-    right: 0,
-    width: 18,
-    height: 18,
-    backgroundColor: Colors.blue.dark,
-    overflow: 'hidden',
-  },
-  concaveCornerRightCutout: {
-    width: 18,
-    height: 18,
-    backgroundColor: Colors.white.canvas,
-    borderTopRightRadius: 18,
+  avatarEmojiText: {
+    fontSize: 18,
   },
 });

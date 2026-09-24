@@ -1,7 +1,6 @@
-/**
- * Speech utility for YojnaMitra
- * Provides speech synthesis functionality for reading government scheme details and chat responses.
- */
+import { NativeModules } from 'react-native';
+
+const { NativeTts } = NativeModules;
 
 type SpeechOptions = {
   language?: string;
@@ -17,26 +16,37 @@ class SpeechService {
 
   speak(text: string, options?: SpeechOptions) {
     this.isSpeakingNow = true;
-    // In React Native, if a native TTS library like react-native-tts is installed it will speak,
-    // or simulate speech lifecycle safely without crashing.
     try {
-      // Safe fallback
+      const nativeTts = NativeModules.NativeTts;
+      if (nativeTts && typeof nativeTts.speak === 'function') {
+        const lang = options?.language || 'hi';
+        const rate = options?.rate || 0.95;
+        const pitch = options?.pitch || 1.0;
+        nativeTts.speak(text, lang, rate, pitch);
+      }
+      
+      const estimatedDuration = Math.min(Math.max(text.length * 60, 1000), 12000);
       setTimeout(() => {
-        if (options?.onDone) {
-          options.onDone();
+        if (this.isSpeakingNow) {
+          this.isSpeakingNow = false;
+          options?.onDone?.();
         }
-        this.isSpeakingNow = false;
-      }, Math.min(Math.max(text.length * 60, 1000), 10000));
+      }, estimatedDuration);
     } catch (e) {
       this.isSpeakingNow = false;
-      if (options?.onError) {
-        options.onError(e);
-      }
+      options?.onError?.(e);
     }
   }
 
   stop() {
     this.isSpeakingNow = false;
+    try {
+      if (NativeTts && typeof NativeTts.stop === 'function') {
+        NativeTts.stop();
+      }
+    } catch (e) {
+      console.warn('TTS stop error:', e);
+    }
   }
 
   isSpeakingAsync(): Promise<boolean> {

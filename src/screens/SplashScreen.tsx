@@ -191,9 +191,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           ]}
         >
           <Image
-            source={require('../../assets/YojnaSplash.png')}
+            source={require('../../assets/CuraTera_Logo.png')}
             style={styles.logoImage}
-            resizeMode="contain"
+            resizeMode="cover"
           />
         </Animated.View>
 
@@ -295,9 +295,9 @@ const styles = StyleSheet.create({
 
   // Logo Wrapper
   logoWrapper: {
-    width: 180,
-    height: 180,
-    borderRadius: 34,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
     backgroundColor: Colors.white.pure,
     alignItems: 'center',
     justifyContent: 'center',
@@ -308,12 +308,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.38,
     shadowRadius: 18,
     marginBottom: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   logoImage: {
-    width: 180,
-    height: 180,
+    width: '100%',
+    height: '100%',
+    borderRadius: 75,
   },
 
   // Brand Titles
