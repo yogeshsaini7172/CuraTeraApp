@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -32,6 +32,7 @@ import { NotificationsScreen } from './src/screens/NotificationsScreen';
 import { DEMO_USERS, DemoUser } from './src/data/demoUsers';
 import { UserSwitcherModal } from './src/components/UserSwitcherModal';
 import { SupportedLanguage, translations } from './src/i18n/translations';
+import { requestNotificationPermission, getFCMToken, onForegroundMessage } from './src/utils/fcm';
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
@@ -57,6 +58,25 @@ export default function App() {
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
+
+  // 5. FCM Push Notification Setup
+  useEffect(() => {
+    async function setupFCM() {
+      const permissionGranted = await requestNotificationPermission();
+      if (permissionGranted) {
+        const token = await getFCMToken();
+        if (token) {
+          console.log('FCM Token ready for backend:', token);
+        }
+      } else {
+        console.log('Notification permission denied');
+      }
+    }
+    setupFCM();
+
+    const unsubscribe = onForegroundMessage();
+    return () => unsubscribe();
+  }, []);
 
   // Helper: Navigate to tab with history stack tracking
   const navigateToTab = (newTab: NavTab) => {

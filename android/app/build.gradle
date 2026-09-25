@@ -10,7 +10,7 @@ def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
  */
 react {
     // Use NVM node.exe directly so Gradle works even when PATH doesn't include Node
-    def nodeExe = "C:\\nvm4w\\nodejs\\node.exe"
+    def nodeExe = "C:\\Program Files\\nodejs\\node.exe"
     def nodeCmd = [nodeExe]
     reactNativeDir = new File(nodeCmd.plus(["--print", "require.resolve('react-native/package.json')"]).execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
     hermesCommand = new File(nodeCmd.plus(["--print", "require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] })"]).execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/hermesc/%OS-BIN%/hermesc"
@@ -165,3 +165,4 @@ dependencies {
 }
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+apply plugin: 'com.google.gms.google-services'

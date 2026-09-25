@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "186943676690",
+    "project_id": "curatera",
+    "storage_bucket": "curatera.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:186943676690:android:afe559254eacd67d6393cb",
+        "android_client_info": {
+          "package_name": "com.yojnamitra.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMzIL6mQskRwKtYXSDAMMU34yEXNxeJ0M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
