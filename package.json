@@ -8,8 +8,10 @@
     "build:android": "cd android && .\\gradlew assembleRelease"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^1.23.1",
     "@react-native-firebase/app": "^26.4.0",
     "@react-native-firebase/messaging": "^26.4.0",
+    "axios": "^1.20.0",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-image-crop-picker": "^0.51.1",

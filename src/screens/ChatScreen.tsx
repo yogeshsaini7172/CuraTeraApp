@@ -20,6 +20,7 @@ import { SupportedLanguage } from '../i18n/translations';
 import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker';
 import { pickDocumentAsync } from '../utils/documentPicker';
 import { recognizeSpeech } from '../utils/speechRecognizer';
+import { chatApi } from '../api';
 
 interface ChatAttachment {
   uri?: string;
@@ -57,6 +58,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // 1-line crisp greeting like ChatGPT (no paragraphs or overwhelming text)
   const initialBotMessage: ChatMessage = {
@@ -252,7 +254,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   };
 
   // Process user text / quick-replies / attachments
-  const handleProcessUserResponse = (userText: string, attachment?: ChatAttachment) => {
+  const handleProcessUserResponse = async (userText: string, attachment?: ChatAttachment) => {
     const textToAnalyze = userText.trim() || (attachment ? attachment.name : '');
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
@@ -263,93 +265,34 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
 
-    setTimeout(() => {
-      let botResponse: ChatMessage;
-
-      if (attachment) {
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: isEn
-            ? `Received your file (${attachment.name}). You are eligible for PM Housing & Welfare Schemes!`
-            : `दस्तावेज़ प्राप्त हुआ (${attachment.name})। आप PM आवास व कल्याणकारी योजनाओं के लिए पात्र हैं!`,
-          quickReplies: isEn
-            ? ['View Schemes 🚀', 'Ask another question']
-            : ['योजनाएं देखें 🚀', 'और सवाल पूछें'],
-          actionType: 'view_schemes',
-        };
-      } else if (
-        userText.includes('पात्रता') ||
-        userText.includes('Eligibility') ||
-        userText.includes('शुरू') ||
-        userText.includes('Start')
-      ) {
-        setCurrentStep(1);
-        const q = profilingSteps[currentLanguage][0];
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: q.question,
-          quickReplies: q.options,
-        };
-      } else if (
-        userText.includes('योजनाएं') ||
-        userText.includes('Schemes')
-      ) {
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: isEn
-            ? 'You have multiple government welfare schemes available in Farming, Housing, and Healthcare.'
-            : 'आपके लिए कृषि, आवास और स्वास्थ्य संबंधी कई सरकारी योजनाएं उपलब्ध हैं।',
-          quickReplies: isEn
-            ? ['View Schemes 🚀', 'Check Eligibility 🔍']
-            : ['योजनाएं देखें 🚀', 'पात्रता जांचें 🔍'],
-          actionType: 'view_schemes',
-        };
-      } else if (currentStep === 1) {
-        setCurrentStep(2);
-        const q = profilingSteps[currentLanguage][1];
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: q.question,
-          quickReplies: q.options,
-        };
-      } else if (currentStep === 2) {
-        setCurrentStep(3);
-        const q = profilingSteps[currentLanguage][2];
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: q.question,
-          quickReplies: q.options,
-        };
-      } else {
-        botResponse = {
-          id: `bot-${Date.now()}`,
-          sender: 'bot',
-          lang: currentLanguage,
-          text: isEn
-            ? 'Based on your profile, you are eligible for PM-Kisan, PM-Awas, and Ayushman Bharat!'
-            : 'आपके प्रोफाइल अनुसार आप PM-किसान, PM-आवास और आयुष्मान भारत के लिए पात्र हैं!',
-          quickReplies: isEn
-            ? ['View Eligible Schemes 🚀', 'Ask another question']
-            : ['योजनाएं देखें 🚀', 'और सवाल पूछें'],
-          actionType: 'view_schemes',
-        };
-      }
+    try {
+      const response = await chatApi.sendMessage(textToAnalyze);
+      
+      const botResponse: ChatMessage = {
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        lang: currentLanguage,
+        text: response.message,
+      };
 
       setMessages((prev) => [...prev, botResponse]);
       // Speak AI response aloud in user's selected language
       handleSpeak(botResponse.text, currentLanguage);
-    }, 600);
+    } catch (error) {
+      console.error('Chat API Error:', error);
+      const errorResponse: ChatMessage = {
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        lang: currentLanguage,
+        text: isEn ? 'Sorry, I encountered an error while processing your request.' : 'क्षमा करें, आपके अनुरोध को संसाधित करते समय एक त्रुटि हुई।',
+      };
+      setMessages((prev) => [...prev, errorResponse]);
+      handleSpeak(errorResponse.text, currentLanguage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleToggleVoice = async () => {
@@ -534,6 +477,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Loading Indicator */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>
+              {isEn ? 'CuraTera AI is typing...' : 'CuraTera AI लिख रहा है...'}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -794,6 +746,15 @@ const styles = StyleSheet.create({
   userText: {
     color: '#0F172A',
     fontWeight: '500',
+  },
+  loadingContainer: {
+    padding: 10,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontStyle: 'italic',
   },
   speakerRow: {
     flexDirection: 'row',
