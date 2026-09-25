@@ -33,11 +33,13 @@ import { DEMO_USERS, DemoUser } from './src/data/demoUsers';
 import { UserSwitcherModal } from './src/components/UserSwitcherModal';
 import { SupportedLanguage, translations } from './src/i18n/translations';
 import { requestNotificationPermission, getFCMToken, onForegroundMessage } from './src/utils/fcm';
+import AuthStore from './src/store/AuthStore';
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
   const [showSplash, setShowSplash] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [loggedInEmail, setLoggedInEmail] = useState<string>('');
   const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [navHistory, setNavHistory] = useState<NavTab[]>(['home']);
@@ -59,7 +61,20 @@ export default function App() {
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
 
-  // 5. FCM Push Notification Setup
+  // 5a. Restore session from local cache on app start (auto-login if token exists)
+  useEffect(() => {
+    async function restoreSession() {
+      const session = await AuthStore.restore();
+      if (session) {
+        setLoggedInEmail(session.user.email);
+        setIsLoggedIn(true);
+        setHasSelectedLanguage(true); // Skip language screen for returning users
+      }
+    }
+    restoreSession();
+  }, []);
+
+  // 5b. FCM Push Notification Setup
   useEffect(() => {
     async function setupFCM() {
       const permissionGranted = await requestNotificationPermission();
@@ -221,11 +236,13 @@ export default function App() {
         <LoginScreen
           currentLanguage={currentLanguage}
           onLanguageChange={setCurrentLanguage}
-          onLoginSuccess={(userName) => {
+          onLoginSuccess={(userName, email) => {
+            setLoggedInEmail(email);
             setIsLoggedIn(true);
           }}
           onDemoLogin={() => {
             setActiveDemoUser(DEMO_USERS[0]);
+            setLoggedInEmail('demo@example.com');
             setIsLoggedIn(true);
           }}
         />

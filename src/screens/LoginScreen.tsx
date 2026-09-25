@@ -9,13 +9,15 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { SupportedLanguage } from '../i18n/translations';
+import AuthStore from '../store/AuthStore';
 
 interface LoginScreenProps {
-  onLoginSuccess: (userName: string) => void;
+  onLoginSuccess: (userName: string, email: string) => void;
   onDemoLogin: () => void;
   currentLanguage?: SupportedLanguage;
   onLanguageChange?: (lang: SupportedLanguage) => void;
@@ -34,32 +36,49 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleAuth = () => {
+  const handleAuth = async () => {
     setErrorMessage(null);
 
+    // --- Basic validation ---
     if (authMode === 'signup' && !fullName.trim()) {
       setErrorMessage(isEn ? 'Please enter your name.' : 'कृपया अपना नाम दर्ज करें।');
       return;
     }
-
     if (!email.trim() || !email.includes('@')) {
       setErrorMessage(isEn ? 'Please enter a valid email.' : 'कृपया एक मान्य ईमेल पता दर्ज करें।');
       return;
     }
-
     if (!password || password.length < 6) {
       setErrorMessage(isEn ? 'Password must be at least 6 characters.' : 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
       return;
     }
 
-    const displayName = fullName.trim() || email.split('@')[0];
-    onLoginSuccess(displayName);
+    setIsLoading(true);
+    try {
+      let session;
+      if (authMode === 'signup') {
+        session = await AuthStore.signup({ email, password, full_name: fullName.trim() });
+      } else {
+        session = await AuthStore.login({ email, password }, fullName.trim() || undefined);
+      }
+      // Success — pass displayName + email up to App.tsx
+      onLoginSuccess(session.user.displayName, session.user.email);
+    } catch (err: any) {
+      // Extract backend error message if available
+      const msg =
+        err?.response?.data?.message ||
+        (isEn ? 'Something went wrong. Please try again.' : 'कुछ गलत हुआ। कृपया पुनः प्रयास करें।');
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
     setErrorMessage(null);
-    onLoginSuccess('Ramesh Kumar');
+    onLoginSuccess('Ramesh Kumar', 'demo@example.com');
   };
 
   return (
@@ -229,16 +248,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
           {/* Primary Action Button */}
           <TouchableOpacity
-            style={styles.primaryAuthButton}
+            style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
             onPress={handleAuth}
             activeOpacity={0.88}
+            disabled={isLoading}
           >
-            <Text style={styles.primaryAuthButtonText}>
-              {authMode === 'login'
-                ? (isEn ? 'Log In' : 'लॉग इन करें')
-                : (isEn ? 'Sign Up' : 'खाता बनाएं')}
-            </Text>
-            <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
+            {isLoading ? (
+              <ActivityIndicator color={Colors.white.pure} size="small" />
+            ) : (
+              <>
+                <Text style={styles.primaryAuthButtonText}>
+                  {authMode === 'login'
+                    ? (isEn ? 'Log In' : 'लॉग इन करें')
+                    : (isEn ? 'Sign Up' : 'खाता बनाएं')}
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Simple Clean Divider */}
