@@ -34,6 +34,7 @@ import { UserSwitcherModal } from './src/components/UserSwitcherModal';
 import { SupportedLanguage, translations } from './src/i18n/translations';
 import { requestNotificationPermission, getFCMToken, onForegroundMessage } from './src/utils/fcm';
 import AuthStore from './src/store/AuthStore';
+import { schemesApi } from './src/api';
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
@@ -60,6 +61,23 @@ export default function App() {
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
+  const [rawSchemes, setRawSchemes] = useState<Scheme[]>(SCHEMES);
+  const [isFetchingSchemes, setIsFetchingSchemes] = useState<boolean>(false);
+
+  const fetchSchemes = async (email?: string) => {
+    try {
+      setIsFetchingSchemes(true);
+      const data = await schemesApi.getSchemes(email || loggedInEmail || undefined);
+      if (Array.isArray(data) && data.length > 0) {
+        setRawSchemes(data);
+        console.log(`[CuraTera] Loaded ${data.length} schemes from server successfully`);
+      }
+    } catch (err) {
+      console.log('[CuraTera] Using offline schemes fallback:', err);
+    } finally {
+      setIsFetchingSchemes(false);
+    }
+  };
 
   // 5a. Restore session from local cache on app start (auto-login if token exists)
   useEffect(() => {
@@ -69,6 +87,9 @@ export default function App() {
         setLoggedInEmail(session.user.email);
         setIsLoggedIn(true);
         setHasSelectedLanguage(true); // Skip language screen for returning users
+        fetchSchemes(session.user.email);
+      } else {
+        fetchSchemes();
       }
     }
     restoreSession();
@@ -160,11 +181,11 @@ export default function App() {
     activeTab,
   ]);
 
-  // Dynamically calculate scheme eligibility based on active persona
-  const dynamicSchemes = SCHEMES.map((scheme) => ({
+  // Dynamically calculate scheme eligibility based on active persona / live backend data
+  const dynamicSchemes = rawSchemes.map((scheme) => ({
     ...scheme,
-    isEligible: activeDemoUser.eligibleSchemeIds.includes(scheme.id),
-    matchPercentage: activeDemoUser.eligibleSchemeIds.includes(scheme.id) ? 100 : 40,
+    isEligible: scheme.isEligible !== undefined ? scheme.isEligible : activeDemoUser.eligibleSchemeIds.includes(scheme.id),
+    matchPercentage: scheme.matchPercentage || (activeDemoUser.eligibleSchemeIds.includes(scheme.id) ? 100 : 40),
   }));
 
   const eligibleCount = dynamicSchemes.filter((s) => s.isEligible).length;
@@ -239,11 +260,13 @@ export default function App() {
           onLoginSuccess={(userName, email) => {
             setLoggedInEmail(email);
             setIsLoggedIn(true);
+            fetchSchemes(email);
           }}
           onDemoLogin={() => {
             setActiveDemoUser(DEMO_USERS[0]);
             setLoggedInEmail('demo@example.com');
             setIsLoggedIn(true);
+            fetchSchemes('demo@example.com');
           }}
         />
       </View>
@@ -363,6 +386,8 @@ export default function App() {
                 onViewDocs={handleViewDocs}
                 onOpenMitraAI={() => navigateToTab('mitra')}
                 currentLanguage={currentLanguage}
+                isRefreshing={isFetchingSchemes}
+                onRefresh={() => fetchSchemes()}
               />
             )}
 

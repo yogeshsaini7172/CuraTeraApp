@@ -6,6 +6,7 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
@@ -18,6 +19,8 @@ interface SchemesScreenProps {
   onViewDocs: (scheme: Scheme) => void;
   onOpenMitraAI: () => void;
   currentLanguage?: SupportedLanguage;
+  isRefreshing?: boolean;
+  onRefresh?: () => void;
 }
 
 // Clean WhatsApp-style category filter options (no emojis)
@@ -35,6 +38,8 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
   schemes,
   onViewDocs,
   currentLanguage = 'hi',
+  isRefreshing,
+  onRefresh,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
@@ -82,6 +87,16 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={!!isRefreshing}
+              onRefresh={onRefresh}
+              colors={[Colors.blue.primary, Colors.orange.primary]}
+              tintColor={Colors.blue.primary}
+            />
+          ) : undefined
+        }
       >
         {/* Category Pills (Inside ScrollView — scrolls away when user scrolls down schemes!) */}
         <View style={styles.pillsWrapper}>
