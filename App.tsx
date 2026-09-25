@@ -213,10 +213,10 @@ export default function App() {
   // 2. Login Phase
   if (!isLoggedIn) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0A2540' }}>
-        <RNStatusBar barStyle="light-content" backgroundColor="#0A2540" translucent={true} />
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <RNStatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={true} />
         {Platform.OS === 'android' && (
-          <View style={{ height: statusBarHeight, backgroundColor: '#0A2540' }} />
+          <View style={{ height: statusBarHeight, backgroundColor: '#FFFFFF' }} />
         )}
         <LoginScreen
           currentLanguage={currentLanguage}
