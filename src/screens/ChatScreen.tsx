@@ -168,6 +168,37 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     };
     loadHistory();
   }, []);
+
+  // Listen to native speech events for real-time Live Mode streaming UI
+  useEffect(() => {
+    const partialSub = DeviceEventEmitter.addListener('onSpeechPartialResult', (text) => {
+      if (isLiveModeRef.current) {
+        setLiveTranscript(text);
+      }
+    });
+
+    const stateSub = DeviceEventEmitter.addListener('onSpeechState', (state) => {
+      if (!isLiveModeRef.current) return;
+      
+      console.log("[LiveMode] Speech state:", state);
+      if (state === 'listening' || state === 'speaking_detected') {
+        setIsListening(true);
+        setIsLoading(false);
+      } else if (state === 'processing') {
+        setIsListening(false);
+        setIsLoading(true);
+      } else if (state === 'error') {
+        setIsListening(false);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      partialSub.remove();
+      stateSub.remove();
+    };
+  }, []);
+
   // Keyboard height listener to smoothly elevate input pill
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
