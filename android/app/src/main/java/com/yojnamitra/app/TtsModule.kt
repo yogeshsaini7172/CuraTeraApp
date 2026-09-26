@@ -1,10 +1,13 @@
 package com.yojnamitra.app
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Promise
 import com.facebook.react.module.annotations.ReactModule
 import java.util.Locale
 
@@ -18,6 +21,9 @@ class TtsModule(private val reactContext: ReactApplicationContext) :
     private var pendingLang: String = "hi"
     private var pendingRate: Float = 0.95f
     private var pendingPitch: Float = 1.0f
+    
+    // Add MediaPlayer for remote audio TTS
+    private var mediaPlayer: MediaPlayer? = null
 
     init {
         try {
@@ -98,8 +104,54 @@ class TtsModule(private val reactContext: ReactApplicationContext) :
             tts?.stop()
             pendingSpeakText = null
             Log.i("NativeTts", "TTS stopped")
+            
+            // Also stop MediaPlayer if running
+            mediaPlayer?.let {
+                if (it.isPlaying) {
+                    it.stop()
+                }
+                it.release()
+            }
+            mediaPlayer = null
         } catch (e: Exception) {
             Log.e("NativeTts", "Exception stopping TTS", e)
+        }
+    }
+
+    @ReactMethod
+    fun playAudioUrl(url: String, promise: Promise) {
+        Log.i("NativeTts", "playAudioUrl called with URL: $url")
+        try {
+            mediaPlayer?.let {
+                if (it.isPlaying) it.stop()
+                it.release()
+            }
+            mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                setDataSource(url)
+                prepareAsync() // use async to avoid blocking the main thread
+                setOnPreparedListener { mp -> 
+                    Log.i("NativeTts", "MediaPlayer prepared, starting playback")
+                    mp.start() 
+                }
+                setOnCompletionListener {
+                    Log.i("NativeTts", "MediaPlayer playback completed")
+                    promise.resolve(null)
+                }
+                setOnErrorListener { _, what, extra ->
+                    Log.e("NativeTts", "MediaPlayer error: what=$what, extra=$extra")
+                    promise.reject("MP_ERROR", "MediaPlayer error: what=$what, extra=$extra")
+                    true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("NativeTts", "Exception in playAudioUrl", e)
+            promise.reject("EXCEPTION", e.message)
         }
     }
 
@@ -109,6 +161,9 @@ class TtsModule(private val reactContext: ReactApplicationContext) :
             tts?.stop()
             tts?.shutdown()
             tts = null
+            
+            mediaPlayer?.release()
+            mediaPlayer = null
         } catch (e: Exception) {
             Log.e("NativeTts", "Exception shutting down TTS", e)
         }

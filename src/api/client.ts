@@ -11,7 +11,7 @@ export const BASE_URL = 'http://10.24.243.1:5000'; // Android emulator default
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },

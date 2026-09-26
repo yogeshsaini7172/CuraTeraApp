@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+import { BASE_URL } from '../api/client';
 
 const { NativeTts } = NativeModules;
 
@@ -14,24 +15,35 @@ type SpeechOptions = {
 class SpeechService {
   private isSpeakingNow: boolean = false;
 
-  speak(text: string, options?: SpeechOptions) {
+  async speak(text: string, options?: SpeechOptions) {
     this.isSpeakingNow = true;
     try {
       const nativeTts = NativeModules.NativeTts;
-      if (nativeTts && typeof nativeTts.speak === 'function') {
-        const lang = options?.language || 'hi';
-        const rate = options?.rate || 0.95;
-        const pitch = options?.pitch || 1.0;
-        nativeTts.speak(text, lang, rate, pitch);
-      }
+      const lang = options?.language || 'auto';
       
-      const estimatedDuration = Math.min(Math.max(text.length * 60, 1000), 12000);
-      setTimeout(() => {
+      try {
+        const url = `${BASE_URL}/api/chat/tts?text=${encodeURIComponent(text)}&lang=${lang}`;
+        await nativeTts.playAudioUrl(url);
+        
+        // Exact completion from Promise!
         if (this.isSpeakingNow) {
           this.isSpeakingNow = false;
           options?.onDone?.();
         }
-      }, estimatedDuration);
+      } catch (_e) {
+        // Fallback to local device TTS if playAudioUrl fails
+        const rate = options?.rate || 0.95;
+        const pitch = options?.pitch || 1.0;
+        nativeTts.speak(text, lang === 'auto' ? 'hi' : lang, rate, pitch);
+        
+        const estimatedDuration = Math.min(Math.max(text.length * 60, 1000), 12000);
+        setTimeout(() => {
+          if (this.isSpeakingNow) {
+            this.isSpeakingNow = false;
+            options?.onDone?.();
+          }
+        }, estimatedDuration);
+      }
     } catch (e) {
       this.isSpeakingNow = false;
       options?.onError?.(e);
