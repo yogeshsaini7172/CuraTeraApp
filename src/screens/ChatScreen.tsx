@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   Modal,
   Pressable,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import Speech from '../utils/speech';
@@ -21,6 +22,9 @@ import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker
 import { pickDocumentAsync } from '../utils/documentPicker';
 import { recognizeSpeech } from '../utils/speechRecognizer';
 import { chatApi } from '../api';
+import { MarkdownText } from '../components/MarkdownText';
+import { TypingIndicator } from '../components/TypingIndicator';
+import LiveModeOverlay from '../components/LiveModeOverlay';
 
 interface ChatAttachment {
   uri?: string;
@@ -63,6 +67,57 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Gemini Live style mode
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const isLiveModeRef = useRef(false);
+  const [isLiveMuted, setIsLiveMuted] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [liveAiResponse, setLiveAiResponse] = useState('');
+
+  const startLiveMode = () => {
+    setIsLiveMode(true);
+    isLiveModeRef.current = true;
+    setLiveTranscript('');
+    setLiveAiResponse('');
+    setIsLiveMuted(false);
+    Vibration.vibrate(50);
+    // Kick off listening after a small delay for the overlay to render
+    setTimeout(() => {
+      if (isLiveModeRef.current) {
+        handleToggleVoice();
+      }
+    }, 600);
+  };
+
+  const endLiveMode = () => {
+    setIsLiveMode(false);
+    isLiveModeRef.current = false;
+    setLiveTranscript('');
+    setLiveAiResponse('');
+    setIsLiveMuted(false);
+    Speech.stop();
+    setIsSpeaking(false);
+    setIsListening(false);
+  };
+
+  const toggleLiveMute = () => {
+    const nextMuted = !isLiveMuted;
+    setIsLiveMuted(nextMuted);
+    if (nextMuted) {
+      // Stop listening if muted
+      if (isListening) {
+        setIsListening(false);
+      }
+      Speech.stop();
+      setIsSpeaking(false);
+    } else {
+      // Resume listening when unmuted
+      if (isLiveModeRef.current && !isListening && !isSpeaking && !isLoading) {
+        handleToggleVoice();
+      }
+    }
+  };
 
   // Step-by-step internal back action handler
   const handleInternalBack = useCallback((): boolean => {
@@ -93,6 +148,57 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
   const [messages, setMessages] = useState<ChatMessage[]>([initialBotMessage]);
 
+  // Fetch chat history on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const historyData = await chatApi.getHistory();
+        if (historyData?.messages && historyData.messages.length > 0) {
+          // Format the backend messages to match the frontend ChatMessage schema
+          const formattedHistory: ChatMessage[] = historyData.messages.map((msg: any) => ({
+            id: msg.id,
+            sender: msg.sender, // 'user' or 'bot'
+            text: msg.text,
+          }));
+          setMessages(formattedHistory);
+        }
+      } catch (e) {
+        console.warn('Failed to load chat history:', e);
+      }
+    };
+    loadHistory();
+  }, []);
+
+  // Listen to native speech events for real-time Live Mode streaming UI
+  useEffect(() => {
+    const partialSub = DeviceEventEmitter.addListener('onSpeechPartialResult', (text) => {
+      if (isLiveModeRef.current) {
+        setLiveTranscript(text);
+      }
+    });
+
+    const stateSub = DeviceEventEmitter.addListener('onSpeechState', (state) => {
+      if (!isLiveModeRef.current) return;
+      
+      console.log("[LiveMode] Speech state:", state);
+      if (state === 'listening' || state === 'speaking_detected') {
+        setIsListening(true);
+        setIsLoading(false);
+      } else if (state === 'processing') {
+        setIsListening(false);
+        setIsLoading(true);
+      } else if (state === 'error') {
+        setIsListening(false);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      partialSub.remove();
+      stateSub.remove();
+    };
+  }, []);
+
   // Keyboard height listener to smoothly elevate input pill
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -115,17 +221,65 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     };
   }, []);
 
-  // Text-to-speech helper: speaks aloud via native Android TTS engine
-  const handleSpeak = (text: string, lang: SupportedLanguage | 'hi' | 'en') => {
+  // Listen to native speech events for real-time Live Mode streaming UI
+  useEffect(() => {
+    const partialSub = DeviceEventEmitter.addListener('onSpeechPartialResult', (text) => {
+      if (isLiveModeRef.current) {
+        setLiveTranscript(text);
+      }
+    });
+
+    const stateSub = DeviceEventEmitter.addListener('onSpeechState', (state) => {
+      if (!isLiveModeRef.current) return;
+      
+      console.log("[LiveMode] Speech state:", state);
+      if (state === 'listening' || state === 'speaking_detected') {
+        setIsListening(true);
+        setIsLoading(false);
+      } else if (state === 'processing') {
+        setIsListening(false);
+        setIsLoading(true);
+      } else if (state === 'error') {
+        setIsListening(false);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      partialSub.remove();
+      stateSub.remove();
+    };
+  }, []);
+
+
+  // Helper to convert markdown and complex text into natural conversational speech
+  const prepareTextForSpeech = (raw: string): string => {
+    return raw
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // [text](url) -> text
+      .replace(/https?:\/\/\S+/g, '')            // remove raw URLs
+      .replace(/[*_#`~>|]/g, ' ')                 // strip markdown formatting symbols
+      .replace(/^[ \t]*[-*•]\s+/gm, ', ')        // bullets to pause
+      .replace(/[^\w\s\u0900-\u097F₹,.]/gi, '')  // keep letters, numbers, devanagari, basic punct
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // Text-to-speech helper: speaks aloud via AI neural voice engine
+  const handleSpeak = (text: string, _lang?: SupportedLanguage | 'hi' | 'en' | 'auto') => {
     Speech.stop();
     setIsSpeaking(true);
-    // Remove emojis and symbols for crisp TTS
-    const cleanText = text.replace(/[^\w\s\u0900-\u097F₹,.]/gi, '').trim();
+    const cleanText = prepareTextForSpeech(text);
     Speech.speak(cleanText, {
-      language: lang === 'hi' ? 'hi' : 'en',
+      language: 'auto', // Smart auto-detect: Madhur (Hindi), Neerja (Hinglish), Ava (English)
       pitch: 1.0,
-      rate: 0.95,
-      onDone: () => setIsSpeaking(false),
+      rate: 1.0,
+      onDone: () => {
+        setIsSpeaking(false);
+        if (isLiveModeRef.current) {
+          // Trigger the voice toggle function automatically
+          handleToggleVoice();
+        }
+      },
       onStopped: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
     });
@@ -301,6 +455,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       };
 
       setMessages((prev) => [...prev, botResponse]);
+      // Update Live Mode overlay with AI response
+      if (isLiveModeRef.current) {
+        setLiveAiResponse(response.message);
+        setLiveTranscript('');
+      }
       // Speak AI response aloud in user's selected language
       handleSpeak(botResponse.text, currentLanguage);
     } catch (error) {
@@ -333,11 +492,34 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     try {
       const recognized = await recognizeSpeech(currentLanguage);
       if (recognized && recognized.trim().length > 0) {
-        // Just like YouTube / Google: write spoken text into the input field!
-        setInputText(recognized.trim());
+        if (isLiveModeRef.current) {
+          // Show transcript in Live Mode overlay
+          setLiveTranscript(recognized.trim());
+          setLiveAiResponse('');
+          // Auto send the message in Live Mode
+          handleProcessUserResponse(recognized.trim());
+        } else {
+          // Just like YouTube / Google: write spoken text into the input field!
+          setInputText(recognized.trim());
+        }
+      } else if (isLiveModeRef.current && !isLiveMuted) {
+        // If nothing recognized, keep listening if still in live mode
+        setTimeout(() => {
+          if (isLiveModeRef.current && !isSpeaking && !isLiveMuted) {
+            handleToggleVoice();
+          }
+        }, 500);
       }
     } catch (err: any) {
       console.log('Voice recognition notice:', err);
+      // Re-listen on error in live mode
+      if (isLiveModeRef.current && !isLiveMuted) {
+        setTimeout(() => {
+          if (isLiveModeRef.current && !isSpeaking && !isLiveMuted) {
+            handleToggleVoice();
+          }
+        }, 500);
+      }
     } finally {
       setIsListening(false);
     }
@@ -374,6 +556,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         </View>
 
         <View style={styles.headerRight}>
+          {/* Live Mode Toggle */}
+          <TouchableOpacity
+            onPress={startLiveMode}
+            style={styles.headerIconBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            accessibilityLabel={isEn ? 'Start Live Mode' : 'लाइव मोड शुरू करें'}
+          >
+            <Ionicons
+              name="radio-outline"
+              size={23}
+              color="#0F172A"
+            />
+          </TouchableOpacity>
+
           {/* Speaker Icon: Toggle speech audio on / off */}
           <TouchableOpacity
             onPress={handleToggleSpeaker}
@@ -447,14 +644,21 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
               )}
 
               {msg.text ? (
-                <Text
-                  style={[
-                    styles.bubbleText,
-                    msg.sender === 'user' ? styles.userText : styles.botText,
-                  ]}
-                >
-                  {msg.text}
-                </Text>
+                msg.sender === 'bot' ? (
+                  <MarkdownText
+                    text={msg.text}
+                    baseStyle={styles.botText}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.bubbleText,
+                      styles.userText,
+                    ]}
+                  >
+                    {msg.text}
+                  </Text>
+                )
               ) : null}
 
               {/* Speaker audio button on AI message */}
@@ -504,13 +708,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         )}
 
         {/* Loading Indicator */}
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>
-              {isEn ? 'CuraTera AI is typing...' : 'CuraTera AI लिख रहा है...'}
-            </Text>
-          </View>
-        )}
+        {isLoading && <TypingIndicator />}
       </ScrollView>
 
       {/* Voice Listening Notice */}
@@ -676,6 +874,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* ── Gemini-style Full Screen Live Mode Overlay ── */}
+      <LiveModeOverlay
+        visible={isLiveMode}
+        isListening={isListening}
+        isSpeaking={isSpeaking}
+        isLoading={isLoading}
+        isMuted={isLiveMuted}
+        transcript={liveTranscript}
+        aiResponse={liveAiResponse}
+        currentLanguage={currentLanguage}
+        onToggleMute={toggleLiveMute}
+        onEndSession={endLiveMode}
+      />
     </View>
   );
 };
@@ -765,19 +977,12 @@ const styles = StyleSheet.create({
   },
   botText: {
     color: '#0F172A',
+    fontSize: 15,
+    lineHeight: 22,
   },
   userText: {
     color: '#0F172A',
     fontWeight: '500',
-  },
-  loadingContainer: {
-    padding: 10,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontStyle: 'italic',
   },
   speakerRow: {
     flexDirection: 'row',
