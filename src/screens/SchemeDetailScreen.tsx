@@ -43,6 +43,10 @@ export const SchemeDetailScreen: React.FC<SchemeDetailScreenProps> = ({
   const description = isEn ? scheme.descriptionEn : scheme.descriptionHi;
   const whyEligible = isEn ? scheme.whyEligibleEn : scheme.whyEligibleHi;
   const requiredDocs = isEn ? scheme.requiredDocsEn : scheme.requiredDocsHi;
+  const applicationProcess =
+    (isEn ? scheme.applicationProcessEn : scheme.applicationProcessHi) ||
+    scheme.applicationProcess ||
+    [];
 
   const handleOpenPortal = async () => {
     try {
@@ -162,6 +166,56 @@ export const SchemeDetailScreen: React.FC<SchemeDetailScreenProps> = ({
                   <Text style={styles.numberedText}>{doc}</Text>
                 </View>
               ))}
+            </View>
+          </View>
+        )}
+
+        {/* Section: Application Process (Clean step-by-step list) */}
+        {applicationProcess && applicationProcess.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionHeading}>
+              {isEn ? 'Application Process' : 'आवेदन प्रक्रिया'}
+            </Text>
+            <View style={styles.processWrap}>
+              {applicationProcess.map((step, idx) => {
+                const lower = step.trim().toLowerCase();
+                const isMode = lower === 'online' || lower === 'offline';
+                const isHeading =
+                  !isMode &&
+                  (step.endsWith(':') ||
+                    lower.startsWith('registration') ||
+                    lower.startsWith('apply for') ||
+                    lower.startsWith('procedure'));
+
+                if (isMode) {
+                  return (
+                    <View key={idx} style={styles.modeBadge}>
+                      <Text style={styles.modeBadgeText}>
+                        {lower === 'online'
+                          ? (isEn ? 'Mode: Online' : 'माध्यम: ऑनलाइन')
+                          : (isEn ? 'Mode: Offline' : 'माध्यम: ऑफलाइन')}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                if (isHeading) {
+                  return (
+                    <Text key={idx} style={styles.processSubheading}>
+                      {step}
+                    </Text>
+                  );
+                }
+
+                return (
+                  <View key={idx} style={styles.processStepRow}>
+                    <View style={styles.processStepCircle}>
+                      <Text style={styles.processStepNumber}>{idx + 1}</Text>
+                    </View>
+                    <Text style={styles.processStepText}>{step}</Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
         )}
@@ -429,5 +483,56 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#0A2540',
+  },
+  processWrap: {
+    gap: 10,
+    marginTop: 2,
+  },
+  modeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginBottom: 4,
+  },
+  modeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#3730A3',
+  },
+  processSubheading: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  processStepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  processStepCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  processStepNumber: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  processStepText: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 20,
   },
 });

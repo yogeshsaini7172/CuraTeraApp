@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  BackHandler,
+  ToastAndroid,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
@@ -18,14 +20,12 @@ import AuthStore from '../store/AuthStore';
 
 interface LoginScreenProps {
   onLoginSuccess: (userName: string, email: string) => void;
-  onDemoLogin: () => void;
   currentLanguage?: SupportedLanguage;
   onLanguageChange?: (lang: SupportedLanguage) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
-  onDemoLogin,
   currentLanguage = 'hi',
   onLanguageChange,
 }) => {
@@ -37,6 +37,39 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const lastBackPressRef = useRef<number>(0);
+
+  // Step-by-step back navigation on Login Screen
+  useEffect(() => {
+    const onBackPress = () => {
+      // Step 1: If on Signup form, step back to Login form!
+      if (authMode === 'signup') {
+        setAuthMode('login');
+        setErrorMessage(null);
+        return true;
+      }
+
+      // Step 2: On Login form, double-tap back within 2 seconds to exit gracefully
+      const now = Date.now();
+      if (lastBackPressRef.current && now - lastBackPressRef.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      lastBackPressRef.current = now;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          isEn ? 'Press back again to exit' : 'ऐप बंद करने के लिए दोबारा बैक दबाएं',
+          ToastAndroid.SHORT
+        );
+      }
+      return true;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [authMode, isEn]);
 
   const handleAuth = async () => {
     setErrorMessage(null);
@@ -77,8 +110,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   const handleGoogleSignIn = () => {
-    setErrorMessage(null);
-    onLoginSuccess('Ramesh Kumar', 'demo@example.com');
+    setErrorMessage(
+      isEn
+        ? 'Google Sign-In will be available soon. Please use Email & Password.'
+        : 'Google साइन-इन जल्द ही उपलब्ध होगा। कृपया ईमेल और पासवर्ड का उपयोग करें।'
+    );
   };
 
   return (
@@ -99,9 +135,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               onPress={() => onLanguageChange(isEn ? 'hi' : 'en')}
               activeOpacity={0.8}
             >
-              <Ionicons name="language" size={15} color="#FFFFFF" />
+              <Ionicons name="language" size={15} color={Colors.blue.primary} />
               <Text style={styles.langSwitchBtnText}>
-                {isEn ? 'हिन्दी में देखें' : 'Switch to English'}
+                {isEn ? 'हिन्दी' : 'English'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -109,18 +145,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
         {/* 1. Minimal & Clean Brand Hero */}
         <View style={styles.heroSection}>
-          <View style={styles.logoBadgeContainer}>
-            <View style={styles.logoBadge}>
-              <Image
-                source={require('../../assets/CuraTera_Logo.png')}
-                style={styles.logoImage}
-                resizeMode="cover"
-              />
-            </View>
-          </View>
+          <Image
+            source={require('../../assets/CuraTera_Logo.png')}
+            style={styles.logoImage}
+            resizeMode="cover"
+          />
           <Text style={styles.brandTitle}>CuraTera</Text>
           <Text style={styles.brandSubtitle}>
-            {isEn ? 'Citizen Welfare & Schemes Assistant' : 'नागरिक कल्याण एवं योजना सहायक'}
+            {isEn ? 'Empowering Citizens, Seamlessly.' : 'नागरिक कल्याण एवं योजना सहायक'}
           </Text>
         </View>
 
@@ -142,7 +174,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   authMode === 'login' && styles.modeTabTextActive,
                 ]}
               >
-                {isEn ? 'Log In' : 'लॉग इन'}
+                {isEn ? 'Sign In' : 'लॉग इन'}
               </Text>
             </TouchableOpacity>
 
@@ -160,7 +192,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   authMode === 'signup' && styles.modeTabTextActive,
                 ]}
               >
-                {isEn ? 'Sign Up' : 'साइन अप'}
+                {isEn ? 'Register' : 'साइन अप'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -180,10 +212,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 {isEn ? 'Full Name' : 'पूरा नाम'}
               </Text>
               <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={18} color={Colors.blue.primary} />
+                <Ionicons name="person-outline" size={18} color="#94A3B8" />
                 <TextInput
                   style={styles.textInput}
-                  placeholder={isEn ? 'Your name' : 'अपना पूरा नाम दर्ज करें'}
+                  placeholder={isEn ? 'John Doe' : 'अपना पूरा नाम दर्ज करें'}
                   placeholderTextColor="#94A3B8"
                   value={fullName}
                   onChangeText={(text) => {
@@ -200,7 +232,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {isEn ? 'Email Address' : 'ईमेल पता'}
             </Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={18} color={Colors.blue.primary} />
+              <Ionicons name="mail-outline" size={18} color="#94A3B8" />
               <TextInput
                 style={styles.textInput}
                 placeholder={isEn ? 'name@example.com' : 'नाम@example.com'}
@@ -221,10 +253,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {isEn ? 'Password' : 'पासवर्ड'}
             </Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={18} color={Colors.blue.primary} />
+              <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
               <TextInput
                 style={styles.textInput}
-                placeholder={isEn ? 'Password (6+ characters)' : 'पासवर्ड (कम से कम 6 अक्षर)'}
+                placeholder={isEn ? '••••••••' : 'पासवर्ड (कम से कम 6 अक्षर)'}
                 placeholderTextColor="#94A3B8"
                 secureTextEntry={!showPassword}
                 value={password}
@@ -240,7 +272,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={19}
-                  color={Colors.orange.primary}
+                  color="#94A3B8"
                 />
               </TouchableOpacity>
             </View>
@@ -259,8 +291,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <>
                 <Text style={styles.primaryAuthButtonText}>
                   {authMode === 'login'
-                    ? (isEn ? 'Log In' : 'लॉग इन करें')
-                    : (isEn ? 'Sign Up' : 'खाता बनाएं')}
+                    ? (isEn ? 'Sign In' : 'लॉग इन करें')
+                    : (isEn ? 'Create Account' : 'खाता बनाएं')}
                 </Text>
                 <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
               </>
@@ -280,36 +312,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             onPress={handleGoogleSignIn}
             activeOpacity={0.85}
           >
-            <Ionicons name="logo-google" size={18} color="#EA4335" />
+            <Image
+              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }}
+              style={{ width: 18, height: 18 }}
+            />
             <Text style={styles.googleAuthButtonText}>
-              {isEn ? 'Continue with Google' : 'Google के साथ आगे बढ़ें'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Quick Demo Mode */}
-          <TouchableOpacity
-            style={styles.demoAuthButton}
-            onPress={onDemoLogin}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="flash" size={17} color={Colors.orange.primary} />
-            <Text style={styles.demoAuthButtonText}>
-              {isEn ? 'Explore Demo as Citizen' : 'डेमो नागरिक के रूप में देखें'}
+              {isEn ? 'Sign in with Google' : 'Google के साथ आगे बढ़ें'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* 3. Minimal Clean Footer */}
+        {/* 3. Secure Footer */}
         <View style={styles.trustFooter}>
-          <View style={styles.dotRow}>
-            <View style={[styles.dot, { backgroundColor: '#FF9933' }]} />
-            <View style={[styles.dot, { backgroundColor: '#FFFFFF' }]} />
-            <View style={[styles.dot, { backgroundColor: '#138808' }]} />
-          </View>
-          <View style={styles.trustBadgeRow}>
-            <Ionicons name="shield-checkmark" size={14} color={Colors.orange.primary} />
-            <Text style={styles.trustFooterText}>
-              {isEn ? 'GovTech Secured • 100% Protected' : 'GovTech सुरक्षित • 100% डेटा सुरक्षा'}
+          <View style={styles.secureBadge}>
+            <Ionicons name="shield-checkmark" size={14} color="#16A34A" />
+            <Text style={styles.secureBadgeText}>
+              Secured by Avensoft • Encryption
             </Text>
           </View>
         </View>
@@ -321,14 +339,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.blue.dark,
+    backgroundColor: '#F8FAFC',
   },
   scrollContent: {
     flexGrow: 1,
     paddingTop: Platform.OS === 'android' ? 28 : 56,
     paddingBottom: 32,
     paddingHorizontal: 20,
-    justifyContent: 'center',
   },
 
   // Top Language Bar
@@ -344,70 +361,59 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
+    borderColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   langSwitchBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1E293B',
   },
 
   // Hero Section
   heroSection: {
     alignItems: 'center',
     marginBottom: 20,
-  },
-  logoBadgeContainer: {
-    padding: 3,
-    borderRadius: 44,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    marginBottom: 10,
-  },
-  logoBadge: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    backgroundColor: Colors.white.pure,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    marginTop: 10,
   },
   logoImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 39,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 16,
   },
   brandTitle: {
     fontSize: 28,
-    fontWeight: '900',
-    color: Colors.white.pure,
+    fontWeight: '800',
+    color: '#0F172A',
     letterSpacing: 0.5,
   },
   brandSubtitle: {
     fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.82)',
-    marginTop: 4,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 6,
     textAlign: 'center',
   },
 
   // Auth Card
   authCard: {
-    backgroundColor: Colors.white.pure,
+    backgroundColor: '#FFFFFF',
     borderRadius: 22,
     padding: 20,
-    elevation: 10,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.02)',
   },
 
   // Segmented Tabs
@@ -416,7 +422,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
     padding: 4,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   modeTab: {
     flex: 1,
@@ -425,12 +431,12 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   modeTabActive: {
-    backgroundColor: Colors.blue.dark,
+    backgroundColor: '#FFFFFF',
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   modeTabText: {
     fontSize: 13,
@@ -438,7 +444,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   modeTabTextActive: {
-    color: Colors.white.pure,
+    color: '#1E293B',
     fontWeight: '700',
   },
 
@@ -464,30 +470,30 @@ const styles = StyleSheet.create({
 
   // Form Fields
   fieldGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 6,
+    color: '#0F172A',
+    marginBottom: 8,
     letterSpacing: 0.2,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 14,
-    height: 48,
+    height: 50,
     gap: 10,
   },
   textInput: {
     flex: 1,
     fontSize: 14,
-    color: Colors.white.textDark,
+    color: '#1E293B',
     paddingVertical: 0,
   },
 
@@ -498,16 +504,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: Colors.blue.dark,
-    height: 48,
+    height: 50,
     borderRadius: 12,
-    marginTop: 4,
-    elevation: 0,
-    shadowOpacity: 0,
+    marginTop: 8,
+    elevation: 3,
+    shadowColor: Colors.blue.dark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
   primaryAuthButtonText: {
-    color: Colors.white.pure,
-    fontSize: 14,
-    fontWeight: '800',
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
 
@@ -515,8 +524,8 @@ const styles = StyleSheet.create({
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 14,
-    gap: 10,
+    marginVertical: 20,
+    gap: 12,
   },
   dividerLine: {
     flex: 1,
@@ -525,7 +534,7 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     fontWeight: '700',
   },
 
@@ -535,62 +544,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: Colors.white.pure,
-    borderWidth: 1.2,
-    borderColor: '#CBD5E1',
-    height: 46,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    height: 50,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   googleAuthButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#1E293B',
-  },
-
-  // Demo Button
-  demoAuthButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1.2,
-    borderColor: Colors.orange.primary,
-    height: 46,
-    borderRadius: 12,
-  },
-  demoAuthButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: Colors.orange.primary,
   },
 
   // Trust Footer
   trustFooter: {
     alignItems: 'center',
-    marginTop: 18,
-    gap: 6,
+    marginTop: 24,
   },
-  dotRow: {
+  secureBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  trustBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
   },
-  trustFooterText: {
+  secureBadgeText: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.70)',
-    fontWeight: '600',
-    letterSpacing: 0.2,
+    color: '#16A34A',
+    fontWeight: '700',
   },
 });

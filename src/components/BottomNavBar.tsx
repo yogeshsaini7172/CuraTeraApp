@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
@@ -11,43 +11,43 @@ interface BottomNavBarProps {
   currentLanguage?: SupportedLanguage;
 }
 
-export const BottomNavBar: React.FC<BottomNavBarProps> = ({
+const TABS: { id: NavTab; labelHi: string; labelEn: string; iconActive: string; iconInactive: string }[] = [
+  {
+    id: 'home',
+    labelHi: 'होम',
+    labelEn: 'Home',
+    iconActive: 'home',
+    iconInactive: 'home-outline',
+  },
+  {
+    id: 'schemes',
+    labelHi: 'योजनाएं',
+    labelEn: 'Scheme',
+    iconActive: 'document-text',
+    iconInactive: 'document-text-outline',
+  },
+  {
+    id: 'mitra',
+    labelHi: 'चैट',
+    labelEn: 'Chat',
+    iconActive: 'chatbubble-ellipses',
+    iconInactive: 'chatbubble-ellipses-outline',
+  },
+  {
+    id: 'profile',
+    labelHi: 'प्रोफ़ाइल',
+    labelEn: 'Profile',
+    iconActive: 'person',
+    iconInactive: 'person-outline',
+  },
+];
+
+export const BottomNavBar: React.FC<BottomNavBarProps> = memo(({
   activeTab,
   onTabChange,
   currentLanguage = 'hi',
 }) => {
   const isEn = currentLanguage === 'en';
-
-  const tabs: { id: NavTab; labelHi: string; labelEn: string; iconActive: string; iconInactive: string }[] = [
-    {
-      id: 'home',
-      labelHi: 'होम',
-      labelEn: 'Home',
-      iconActive: 'home',
-      iconInactive: 'home-outline',
-    },
-    {
-      id: 'schemes',
-      labelHi: 'योजनाएं',
-      labelEn: 'Scheme',
-      iconActive: 'document-text',
-      iconInactive: 'document-text-outline',
-    },
-    {
-      id: 'mitra',
-      labelHi: 'चैट',
-      labelEn: 'Chat',
-      iconActive: 'chatbubble-ellipses',
-      iconInactive: 'chatbubble-ellipses-outline',
-    },
-    {
-      id: 'profile',
-      labelHi: 'प्रोफ़ाइल',
-      labelEn: 'Profile',
-      iconActive: 'person',
-      iconInactive: 'person-outline',
-    },
-  ];
 
   return (
     <View style={styles.navWrapper}>
@@ -55,7 +55,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
       <View style={styles.topBorderLine} />
 
       <View style={styles.navBar}>
-        {tabs.map((tab) => {
+        {TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           const label = isEn ? tab.labelEn : tab.labelHi;
           const iconName = isActive ? tab.iconActive : tab.iconInactive;
@@ -66,6 +66,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               style={styles.tabItem}
               onPress={() => onTabChange(tab.id)}
               activeOpacity={0.7}
+              delayPressIn={0}
             >
               {/* Amazon/LinkedIn style: colored top-indicator only on active tab */}
               <View style={[styles.topIndicator, isActive && styles.topIndicatorActive]} />
@@ -84,7 +85,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   navWrapper: {

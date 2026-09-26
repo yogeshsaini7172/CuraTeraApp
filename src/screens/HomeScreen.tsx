@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -94,6 +94,7 @@ interface HomeScreenProps {
   unreadCount?: number;
   currentLanguage?: SupportedLanguage;
   onActiveSchemeChange?: (scheme: Scheme | null) => void;
+  registerBackHandler?: (handler: (() => boolean) | null) => void;
 }
 
 // Flagship Hero Card #1: AI Voice Mitra Assistant (Poster Style)
@@ -141,11 +142,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   unreadCount = 2,
   currentLanguage = 'hi',
   onActiveSchemeChange,
+  registerBackHandler,
 }) => {
   const isEn = currentLanguage === 'en';
   const [searchQuery, setSearchQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Step-by-step internal back action handler (Clear search -> Tab pop)
+  const handleInternalBack = useCallback((): boolean => {
+    if (searchQuery.length > 0) {
+      setSearchQuery('');
+      setActiveIndex(0);
+      scrollRef.current?.scrollTo({ x: 0, animated: true });
+      return true;
+    }
+    return false;
+  }, [searchQuery]);
+
+  useEffect(() => {
+    registerBackHandler?.(handleInternalBack);
+    return () => registerBackHandler?.(null);
+  }, [handleInternalBack, registerBackHandler]);
 
   // 1. Initial Load: Pick 8 diverse/random schemes from available list
   const [initialRandomPool] = useState<Scheme[]>(() => {
@@ -254,7 +272,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <Header
             isHome={true}
             activeTab="home"
-            activeDemoUser={activeUser || DEMO_USERS[0]}
+            activeDemoUser={activeUser || ({ id: 'citizen', name: 'Citizen', profile: {} } as any)}
             onOpenUserSwitcher={onOpenUserSwitcher || onOpenProfile || (() => {})}
             onOpenNotifications={onOpenNotifications || (() => {})}
             onNavigateToProfile={() => onNavigateToTab?.('profile')}

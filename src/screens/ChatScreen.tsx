@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -42,12 +42,16 @@ interface ChatScreenProps {
   onBack?: () => void;
   onNavigateToSchemes: () => void;
   currentLanguage?: SupportedLanguage;
+  onProfileUpdated?: (updatedProfile: any) => void;
+  registerBackHandler?: (handler: (() => boolean) | null) => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
   onBack,
   onNavigateToSchemes,
   currentLanguage = 'hi',
+  onProfileUpdated,
+  registerBackHandler,
 }) => {
   const isEn = currentLanguage === 'en';
   const scrollViewRef = useRef<ScrollView>(null);
@@ -59,6 +63,20 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [pendingAttachment, setPendingAttachment] = useState<ChatAttachment | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Step-by-step internal back action handler
+  const handleInternalBack = useCallback((): boolean => {
+    if (showAttachmentMenu) {
+      setShowAttachmentMenu(false);
+      return true;
+    }
+    return false;
+  }, [showAttachmentMenu]);
+
+  useEffect(() => {
+    registerBackHandler?.(handleInternalBack);
+    return () => registerBackHandler?.(null);
+  }, [handleInternalBack, registerBackHandler]);
 
   // 1-line crisp greeting like ChatGPT (no paragraphs or overwhelming text)
   const initialBotMessage: ChatMessage = {
@@ -270,6 +288,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     try {
       const response = await chatApi.sendMessage(textToAnalyze);
       
+      // If AI extracted/updated citizen profile in chat, notify parent
+      if (response.citizen_profile && Object.keys(response.citizen_profile).length > 0) {
+        onProfileUpdated?.(response.citizen_profile);
+      }
+
       const botResponse: ChatMessage = {
         id: `bot-${Date.now()}`,
         sender: 'bot',
