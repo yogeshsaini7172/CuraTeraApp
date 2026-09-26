@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,7 @@ import {
   Modal,
   PanResponder,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker';
@@ -31,6 +32,7 @@ interface ProfileScreenProps {
   onLogout: () => void;
   onUpdateAvatar?: (newImageSource: any) => void;
   onUpdateProfile?: (updatedProfile: Partial<UserProfile>, updatedName?: string) => void;
+  registerBackHandler?: (handler: (() => boolean) | null) => void;
 }
 
 type ScreenView = 'main' | 'profile_detail' | 'setting';
@@ -88,6 +90,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onLogout,
   onUpdateAvatar,
   onUpdateProfile,
+  registerBackHandler,
 }) => {
   const isEn = currentLanguage === 'en';
   const [currentView, setCurrentView] = useState<ScreenView>('main');
@@ -101,35 +104,32 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const [activeDropdown, setActiveDropdown] = useState<DropdownField>(null);
 
-  // Change Password state
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // User details — safely handle completely blank profiles
+  const profile = activeDemoUser?.profile || ({} as Partial<UserProfile>);
 
-  // User details
   const displayName = isEn
-    ? (activeDemoUser.nameEn || activeDemoUser.name)
-    : (activeDemoUser.nameHi || activeDemoUser.name);
+    ? (activeDemoUser?.nameEn || activeDemoUser?.name || '')
+    : (activeDemoUser?.nameHi || activeDemoUser?.name || '');
 
   const displayState = isEn
-    ? (activeDemoUser.profile.stateEn || activeDemoUser.profile.state)
-    : (activeDemoUser.profile.stateHi || activeDemoUser.profile.state);
+    ? (profile.stateEn || profile.state || '')
+    : (profile.stateHi || profile.state || '');
 
   const displayOccupation = isEn
-    ? (activeDemoUser.profile.occupationEn || activeDemoUser.profile.occupation)
-    : (activeDemoUser.profile.occupationHi || activeDemoUser.profile.occupation);
+    ? (profile.occupationEn || profile.occupation || '')
+    : (profile.occupationHi || profile.occupation || '');
 
   const displayIncome = isEn
-    ? (activeDemoUser.profile.annualIncomeEn || activeDemoUser.profile.annualIncome)
-    : (activeDemoUser.profile.annualIncomeHi || activeDemoUser.profile.annualIncome);
+    ? (profile.annualIncomeEn || profile.annualIncome || '')
+    : (profile.annualIncomeHi || profile.annualIncome || '');
 
   const displayHouseType = isEn
-    ? (activeDemoUser.profile.houseTypeEn || activeDemoUser.profile.houseType)
-    : (activeDemoUser.profile.houseTypeHi || activeDemoUser.profile.houseType);
+    ? (profile.houseTypeEn || profile.houseType || '')
+    : (profile.houseTypeHi || profile.houseType || '');
 
   const displayCategory = isEn
-    ? (activeDemoUser.profile.categoryEn || activeDemoUser.profile.category || 'General')
-    : (activeDemoUser.profile.categoryHi || activeDemoUser.profile.category || 'सामान्य');
+    ? (profile.categoryEn || profile.category || '')
+    : (profile.categoryHi || profile.category || '');
 
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -139,6 +139,67 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [editIncome, setEditIncome] = useState(displayIncome);
   const [editHouseType, setEditHouseType] = useState(displayHouseType);
   const [editCategory, setEditCategory] = useState(displayCategory);
+
+  // Change Password state
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Step-by-step internal back action handler
+  const handleInternalBack = useCallback((): boolean => {
+    if (showFullImageViewer) {
+      setShowFullImageViewer(false);
+      return true;
+    }
+    if (showPhotoPickerModal) {
+      setShowPhotoPickerModal(false);
+      return true;
+    }
+    if (showLanguageModal) {
+      setShowLanguageModal(false);
+      return true;
+    }
+    if (showPasswordModal) {
+      setShowPasswordModal(false);
+      return true;
+    }
+    if (showPrivacyModal) {
+      setShowPrivacyModal(false);
+      return true;
+    }
+    if (activeDropdown) {
+      setActiveDropdown(null);
+      return true;
+    }
+    if (isEditingProfile) {
+      setIsEditingProfile(false);
+      return true;
+    }
+    if (currentView !== 'main') {
+      setCurrentView('main');
+      return true;
+    }
+    return false;
+  }, [
+    showFullImageViewer,
+    showPhotoPickerModal,
+    showLanguageModal,
+    showPasswordModal,
+    showPrivacyModal,
+    activeDropdown,
+    isEditingProfile,
+    currentView,
+  ]);
+
+  useEffect(() => {
+    registerBackHandler?.(handleInternalBack);
+    return () => registerBackHandler?.(null);
+  }, [handleInternalBack, registerBackHandler]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', handleInternalBack);
+    return () => sub.remove();
+  }, [handleInternalBack]);
 
   // Photo Picker
   const handleOpenPhotoPicker = () => {
@@ -321,7 +382,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Full Name */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'Full Name' : 'पूरा नाम'}</Text>
-          <Text style={styles.detailValue}>{displayName}</Text>
+          <Text style={[styles.detailValue, !displayName && styles.detailValueEmpty]}>
+            {displayName || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
 
         <View style={styles.rowDividerInset} />
@@ -329,7 +392,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* State */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'State' : 'राज्य'}</Text>
-          <Text style={styles.detailValue}>{displayState}</Text>
+          <Text style={[styles.detailValue, !displayState && styles.detailValueEmpty]}>
+            {displayState || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
 
         <View style={styles.rowDividerInset} />
@@ -337,7 +402,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Occupation */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'Occupation' : 'व्यवसाय'}</Text>
-          <Text style={styles.detailValue}>{displayOccupation}</Text>
+          <Text style={[styles.detailValue, !displayOccupation && styles.detailValueEmpty]}>
+            {displayOccupation || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
 
         <View style={styles.rowDividerInset} />
@@ -345,7 +412,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Annual Income */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'Annual Income' : 'वार्षिक आय'}</Text>
-          <Text style={styles.detailValue}>{displayIncome}</Text>
+          <Text style={[styles.detailValue, !displayIncome && styles.detailValueEmpty]}>
+            {displayIncome || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
 
         <View style={styles.rowDividerInset} />
@@ -353,7 +422,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* House Type */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'House Type' : 'मकान का प्रकार'}</Text>
-          <Text style={styles.detailValue}>{displayHouseType}</Text>
+          <Text style={[styles.detailValue, !displayHouseType && styles.detailValueEmpty]}>
+            {displayHouseType || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
 
         <View style={styles.rowDividerInset} />
@@ -361,7 +432,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* Social Category */}
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>{isEn ? 'Category' : 'सामाजिक श्रेणी'}</Text>
-          <Text style={styles.detailValue}>{displayCategory}</Text>
+          <Text style={[styles.detailValue, !displayCategory && styles.detailValueEmpty]}>
+            {displayCategory || (isEn ? 'Not specified' : 'दर्ज नहीं')}
+          </Text>
         </View>
       </View>
     </View>
@@ -529,10 +602,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           {/* User Name and Occupation (Verified Citizen removed as requested) */}
           <View style={styles.heroTextContainer}>
             <Text style={styles.heroUserName} numberOfLines={1}>
-              {displayName}
+              {displayName || (isEn ? 'Citizen' : 'नागरिक')}
             </Text>
-            <Text style={styles.userOccupationText} numberOfLines={1}>
-              {displayOccupation}
+            <Text style={[styles.userOccupationText, !displayOccupation && { fontStyle: 'italic', opacity: 0.8 }]} numberOfLines={1}>
+              {displayOccupation || (isEn ? 'Profile Incomplete • Tap Edit to fill' : 'प्रोफ़ाइल अधूरी • भरने के लिए एडिट दबाएं')}
             </Text>
           </View>
         </View>
@@ -1600,6 +1673,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'right',
     maxWidth: '58%',
+  },
+  detailValueEmpty: {
+    color: '#94A3B8',
+    fontWeight: '500',
+    fontStyle: 'italic',
   },
   rowDividerInset: {
     height: 1,

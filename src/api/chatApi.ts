@@ -4,6 +4,7 @@ export interface ChatMessageResponse {
   message: string;
   blocks?: any[];
   citations?: any[];
+  citizen_profile?: any;
 }
 
 export const chatApi = {

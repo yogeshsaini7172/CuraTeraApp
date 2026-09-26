@@ -26,6 +26,9 @@ export interface Scheme {
   descriptionEn: string;
   requiredDocsHi: string[];
   requiredDocsEn: string[];
+  applicationProcess?: string[];
+  applicationProcessHi?: string[];
+  applicationProcessEn?: string[];
   officialUrl: string;
   helplinePhone: string;
   themeColor?: string;   // Vibrant theme color (Saffron, Blue, Emerald, Purple, Amber, Crimson, etc.)
@@ -63,27 +66,31 @@ export interface DocumentItem {
 
 export interface UserProfile {
   name: string;
-  age: number;
-  state: string;
+  age?: number | null;
+  state?: string;
   stateHi?: string;
   stateEn?: string;
-  area: string;
+  area?: string;
   areaHi?: string;
   areaEn?: string;
-  occupation: string;
+  occupation?: string;
   occupationHi?: string;
   occupationEn?: string;
-  annualIncome: string;
+  annualIncome?: string;
   annualIncomeHi?: string;
   annualIncomeEn?: string;
-  category: string;
+  category?: string;
   categoryHi?: string;
   categoryEn?: string;
-  houseType: string;
+  houseType?: string;
   houseTypeHi?: string;
   houseTypeEn?: string;
-  isKisan: boolean;
-  gender?: 'male' | 'female' | 'other';
+  isKisan?: boolean;
+  gender?: 'male' | 'female' | 'other' | '';
   genderHi?: string;
   genderEn?: string;
+  email?: string;
+  phone?: string;
+  eligibleSchemeIds?: string[];
+  [key: string]: any;
 }
