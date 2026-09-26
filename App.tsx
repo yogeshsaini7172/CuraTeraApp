@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
   Linking,
   Platform,
   BackHandler,
+  ToastAndroid,
   StatusBar as RNStatusBar,
 } from 'react-native';
 import { Ionicons } from './src/utils/icons';
@@ -29,12 +30,64 @@ import { LanguageSelectScreen } from './src/screens/LanguageSelectScreen';
 import { SchemeDetailScreen } from './src/screens/SchemeDetailScreen';
 import { NotificationsScreen } from './src/screens/NotificationsScreen';
 
-import { DEMO_USERS, DemoUser } from './src/data/demoUsers';
-import { UserSwitcherModal } from './src/components/UserSwitcherModal';
+import { DemoUser } from './src/data/demoUsers';
 import { SupportedLanguage, translations } from './src/i18n/translations';
 import { requestNotificationPermission, getFCMToken, onForegroundMessage } from './src/utils/fcm';
 import AuthStore from './src/store/AuthStore';
-import { schemesApi } from './src/api';
+import apiClient from './src/api/client';
+import { UserProfile } from './src/types';
+
+const EMPTY_CITIZEN_PROFILE: UserProfile = {
+  name: '',
+  age: null,
+  state: '',
+  stateHi: '',
+  stateEn: '',
+  area: '',
+  areaHi: '',
+  areaEn: '',
+  occupation: '',
+  occupationHi: '',
+  occupationEn: '',
+  annualIncome: '',
+  annualIncomeHi: '',
+  annualIncomeEn: '',
+  category: '',
+  categoryHi: '',
+  categoryEn: '',
+  houseType: '',
+  houseTypeHi: '',
+  houseTypeEn: '',
+  isKisan: false,
+  gender: '',
+  genderHi: '',
+  genderEn: '',
+};
+
+const createCitizenUser = (email: string, name?: string, profileData?: Partial<UserProfile>): DemoUser => {
+  const displayName = name || (email ? email.split('@')[0] : '');
+  const eligibleSchemeIds = Array.isArray(profileData?.eligibleSchemeIds)
+    ? profileData.eligibleSchemeIds
+    : [];
+
+  return {
+    id: email || 'citizen',
+    name: displayName,
+    nameHi: displayName,
+    nameEn: displayName,
+    avatar: '👤',
+    image: null,
+    tagline: 'Registered Citizen • CuraTera',
+    taglineHi: 'पंजीकृत नागरिक • क्यूराटेरा',
+    taglineEn: 'Registered Citizen • CuraTera',
+    eligibleSchemeIds,
+    profile: {
+      ...EMPTY_CITIZEN_PROFILE,
+      name: displayName,
+      ...profileData,
+    },
+  };
+};
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
@@ -45,9 +98,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [navHistory, setNavHistory] = useState<NavTab[]>(['home']);
 
-  // 2. Demo Citizen Persona State (Ramesh, Priya, Sunita, Raju)
-  const [activeDemoUser, setActiveDemoUser] = useState<DemoUser>(DEMO_USERS[0]);
-  const [isUserSwitcherVisible, setIsUserSwitcherVisible] = useState<boolean>(false);
+  // Screen-specific back handler delegates (for sub-views, edit modes, and search states)
+  const profileBackRef = useRef<(() => boolean) | null>(null);
+  const schemesBackRef = useRef<(() => boolean) | null>(null);
+  const chatBackRef = useRef<(() => boolean) | null>(null);
+  const homeBackRef = useRef<(() => boolean) | null>(null);
+  const lastExitPressRef = useRef<number>(0);
+
+  // 2. Real Authenticated Citizen State (stored in MongoDB & local session)
+  const [currentUser, setCurrentUser] = useState<DemoUser>(() =>
+    createCitizenUser('', '')
+  );
+  const activeDemoUser = currentUser;
 
   // 3. UI Language State (Default: English - can toggle to Hindi in Profile)
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>('en');
@@ -61,35 +123,33 @@ export default function App() {
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
-  const [rawSchemes, setRawSchemes] = useState<Scheme[]>(SCHEMES);
-  const [isFetchingSchemes, setIsFetchingSchemes] = useState<boolean>(false);
 
-  const fetchSchemes = async (email?: string) => {
-    try {
-      setIsFetchingSchemes(true);
-      const data = await schemesApi.getSchemes(email || loggedInEmail || undefined);
-      if (Array.isArray(data) && data.length > 0) {
-        setRawSchemes(data);
-        console.log(`[CuraTera] Loaded ${data.length} schemes from server successfully`);
-      }
-    } catch (err) {
-      console.log('[CuraTera] Using offline schemes fallback:', err);
-    } finally {
-      setIsFetchingSchemes(false);
-    }
-  };
-
-  // 5a. Restore session from local cache on app start (auto-login if token exists)
+  // 5a. Restore session from local cache on app start - Strictly verified with MongoDB backend
   useEffect(() => {
     async function restoreSession() {
       const session = await AuthStore.restore();
-      if (session) {
-        setLoggedInEmail(session.user.email);
-        setIsLoggedIn(true);
-        setHasSelectedLanguage(true); // Skip language screen for returning users
-        fetchSchemes(session.user.email);
-      } else {
-        fetchSchemes();
+      if (!session) {
+        setIsLoggedIn(false);
+        return;
+      }
+
+      // STRICT CHECK: Verify with MongoDB server that this user actually exists
+      try {
+        const res = await apiClient.get('/api/profile');
+        if (res.data?.profile) {
+          const p = res.data.profile;
+          setLoggedInEmail(session.user.email);
+          setCurrentUser(createCitizenUser(session.user.email, session.user.displayName, p));
+          setIsLoggedIn(true);
+          setHasSelectedLanguage(true); // Skip language screen for returning verified users
+        } else {
+          throw new Error('User profile not found on server');
+        }
+      } catch (err: any) {
+        // User not in MongoDB / token invalid -> Force logout and keep on Login/Signup screen!
+        console.log('Session verification failed on server, forcing Login/Signup:', err?.message);
+        await AuthStore.logout();
+        setIsLoggedIn(false);
       }
     }
     restoreSession();
@@ -114,34 +174,64 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Helper: Navigate to tab with history stack tracking
-  const navigateToTab = (newTab: NavTab) => {
-    if (newTab === activeTab) return;
-    setNavHistory((prev) => {
-      if (prev[prev.length - 1] === newTab) return prev;
-      return [...prev, newTab];
-    });
-    setActiveTab(newTab);
-  };
+  // Track visited tabs to keep screens mounted (lazy keep-alive) for instant 0ms tab switching
+  const [visitedTabs, setVisitedTabs] = useState<Partial<Record<NavTab, boolean>>>({
+    home: true,
+  });
 
-  // Step-by-step back navigation handler (Modal -> Subscreen -> Home)
-  const handleGoBack = (): boolean => {
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev[activeTab] ? prev : { ...prev, [activeTab]: true }));
+  }, [activeTab]);
+
+  // Helper: Navigate to tab with history stack tracking (memoized for instant 0ms callback)
+  const navigateToTab = useCallback((newTab: NavTab) => {
+    setActiveTab((currentTab) => {
+      if (newTab === currentTab) return currentTab;
+      setNavHistory((prev) => {
+        if (prev[prev.length - 1] === newTab) return prev;
+        return [...prev, newTab];
+      });
+      return newTab;
+    });
+  }, []);
+
+  const handleCloseDocsModal = useCallback(() => {
+    Speech.stop();
+    setIsSpeakingScheme(false);
+    setSelectedSchemeForDocs(null);
+    if (returnToNotificationOnBack) {
+      setReturnToNotificationOnBack(false);
+      setIsNotificationVisible(true);
+    }
+  }, [returnToNotificationOnBack]);
+
+  // Step-by-step back navigation handler (Modal -> Subscreen/Dropdown/Edit -> Tab History -> Double-tap Exit)
+  const handleGoBack = useCallback((): boolean => {
     // Step 1: Close scheme details modal if open
     if (selectedSchemeForDocs) {
       handleCloseDocsModal();
       return true;
     }
 
-    // Step 2: Close user switcher modal if open
-    if (isUserSwitcherVisible) {
-      setIsUserSwitcherVisible(false);
+    // Step 2: Close notifications modal if open
+    if (isNotificationVisible) {
+      setIsNotificationVisible(false);
+      setReturnToNotificationOnBack(false);
       return true;
     }
 
-    // Step 3: Close notifications modal if open
-    if (isNotificationVisible) {
-      setIsNotificationVisible(false);
-      return true;
+    // Step 3: Current active tab's internal sub-screen / sub-modal / dropdown / search / edit handler
+    if (activeTab === 'profile' && profileBackRef.current) {
+      if (profileBackRef.current()) return true;
+    }
+    if (activeTab === 'schemes' && schemesBackRef.current) {
+      if (schemesBackRef.current()) return true;
+    }
+    if (activeTab === 'mitra' && chatBackRef.current) {
+      if (chatBackRef.current()) return true;
+    }
+    if (activeTab === 'home' && homeBackRef.current) {
+      if (homeBackRef.current()) return true;
     }
 
     // Step 4: Step-by-step tab history pop
@@ -161,9 +251,29 @@ export default function App() {
       return true;
     }
 
-    // At root home with no open modals: allow default Android hardware back behavior
-    return false;
-  };
+    // Step 6: Root Home Tab — Double-tap back within 2 seconds to gracefully exit
+    const now = Date.now();
+    if (lastExitPressRef.current && now - lastExitPressRef.current < 2000) {
+      BackHandler.exitApp();
+      return true;
+    }
+
+    lastExitPressRef.current = now;
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(
+        currentLanguage === 'en' ? 'Press back again to exit' : 'ऐप बंद करने के लिए दोबारा बैक दबाएं',
+        ToastAndroid.SHORT
+      );
+    }
+    return true;
+  }, [
+    selectedSchemeForDocs,
+    isNotificationVisible,
+    activeTab,
+    navHistory,
+    currentLanguage,
+    handleCloseDocsModal,
+  ]);
 
   // Hardware Back Button integration (Android physical / gesture back)
   useEffect(() => {
@@ -173,22 +283,37 @@ export default function App() {
 
     const backSubscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => backSubscription.remove();
-  }, [
-    selectedSchemeForDocs,
-    isUserSwitcherVisible,
-    isNotificationVisible,
-    navHistory,
-    activeTab,
-  ]);
+  }, [handleGoBack]);
 
-  // Dynamically calculate scheme eligibility based on active persona / live backend data
-  const dynamicSchemes = rawSchemes.map((scheme) => ({
-    ...scheme,
-    isEligible: scheme.isEligible !== undefined ? scheme.isEligible : activeDemoUser.eligibleSchemeIds.includes(scheme.id),
-    matchPercentage: scheme.matchPercentage || (activeDemoUser.eligibleSchemeIds.includes(scheme.id) ? 100 : 40),
-  }));
+  // Dynamically calculate scheme eligibility strictly based on citizen's actual profile details
+  const dynamicSchemes = useMemo(() => {
+    const p = activeDemoUser.profile;
+    const hasOcc = Boolean(p?.occupation && p.occupation.trim());
+    const hasIncome = Boolean(p?.annualIncome && p.annualIncome.trim());
+    const hasAge = p?.age !== null && p?.age !== undefined && String(p.age).trim() !== '';
+    const hasExplicit = Boolean(activeDemoUser.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
+    const isProfileProper = hasOcc || hasIncome || hasAge || hasExplicit;
 
-  const eligibleCount = dynamicSchemes.filter((s) => s.isEligible).length;
+    // Strict real-world rule: Incomplete / blank profile -> ZERO eligibility!
+    if (!isProfileProper) {
+      return SCHEMES.map((scheme) => ({
+        ...scheme,
+        isEligible: false,
+        matchPercentage: 0,
+      }));
+    }
+
+    const eligibleIds = activeDemoUser.eligibleSchemeIds || [];
+    return SCHEMES.map((scheme) => ({
+      ...scheme,
+      isEligible: eligibleIds.includes(scheme.id),
+      matchPercentage: eligibleIds.includes(scheme.id) ? 100 : 0,
+    }));
+  }, [activeDemoUser]);
+
+  const eligibleCount = useMemo(() => {
+    return dynamicSchemes.filter((s) => s.isEligible).length;
+  }, [dynamicSchemes]);
 
   // Handlers
   const handleStartVoiceChat = () => {
@@ -199,15 +324,6 @@ export default function App() {
     setSelectedSchemeForDocs(scheme);
   };
 
-  const handleCloseDocsModal = () => {
-    Speech.stop();
-    setIsSpeakingScheme(false);
-    setSelectedSchemeForDocs(null);
-    if (returnToNotificationOnBack) {
-      setReturnToNotificationOnBack(false);
-      setIsNotificationVisible(true);
-    }
-  };
 
   const handleSpeakSchemeDetails = (scheme: Scheme) => {
     if (isSpeakingScheme) {
@@ -257,16 +373,28 @@ export default function App() {
         <LoginScreen
           currentLanguage={currentLanguage}
           onLanguageChange={setCurrentLanguage}
-          onLoginSuccess={(userName, email) => {
+          onLoginSuccess={async (userName, email) => {
             setLoggedInEmail(email);
+            setCurrentUser(createCitizenUser(email, userName));
             setIsLoggedIn(true);
-            fetchSchemes(email);
-          }}
-          onDemoLogin={() => {
-            setActiveDemoUser(DEMO_USERS[0]);
-            setLoggedInEmail('demo@example.com');
-            setIsLoggedIn(true);
-            fetchSchemes('demo@example.com');
+
+            // Fetch latest profile from backend
+            try {
+              const res = await apiClient.get('/api/profile');
+              if (res.data?.profile) {
+                const p = res.data.profile;
+                setCurrentUser((prev) => ({
+                  ...prev,
+                  name: p.name || prev.name,
+                  nameEn: p.name || prev.nameEn,
+                  nameHi: p.name || prev.nameHi,
+                  profile: {
+                    ...prev.profile,
+                    ...p,
+                  },
+                }));
+              }
+            } catch (_) {}
           }}
         />
       </View>
@@ -349,7 +477,7 @@ export default function App() {
               activeTab={activeTab}
               onBackPress={handleGoBack}
               activeDemoUser={activeDemoUser}
-              onOpenUserSwitcher={() => setIsUserSwitcherVisible(true)}
+              onOpenUserSwitcher={() => navigateToTab('profile')}
               onOpenNotifications={() => setIsNotificationVisible(true)}
               onNavigateToProfile={() => navigateToTab('profile')}
               eligibleCount={eligibleCount}
@@ -360,79 +488,122 @@ export default function App() {
             />
           )}
 
-          {/* Screen Body */}
+          {/* Screen Body with 0ms Instant Tab Keep-Alive */}
           <View style={styles.screenArea}>
-            {activeTab === 'home' && (
-              <HomeScreen
-                schemes={dynamicSchemes}
-                onViewDocs={handleViewDocs}
-                onNavigateToSchemes={() => navigateToTab('schemes')}
-                onStartVoiceChat={() => navigateToTab('mitra')}
-                onNavigateToTab={navigateToTab}
-                activeUser={activeDemoUser}
-                onOpenProfile={() => setIsUserSwitcherVisible(true)}
-                onOpenUserSwitcher={() => setIsUserSwitcherVisible(true)}
-                onOpenNotifications={() => setIsNotificationVisible(true)}
-                eligibleCount={eligibleCount}
-                unreadCount={Math.max(0, 4 - readNotificationIds.length)}
-                currentLanguage={currentLanguage}
-                onActiveSchemeChange={setActiveHomeScheme}
-              />
+            {visitedTabs.home && (
+              <View style={[styles.tabScreenContainer, activeTab !== 'home' && styles.hiddenScreen]}>
+                <HomeScreen
+                  schemes={dynamicSchemes}
+                  onViewDocs={handleViewDocs}
+                  onNavigateToSchemes={() => navigateToTab('schemes')}
+                  onStartVoiceChat={() => navigateToTab('mitra')}
+                  onNavigateToTab={navigateToTab}
+                  activeUser={activeDemoUser}
+                  onOpenProfile={() => navigateToTab('profile')}
+                  onOpenUserSwitcher={() => navigateToTab('profile')}
+                  onOpenNotifications={() => setIsNotificationVisible(true)}
+                  eligibleCount={eligibleCount}
+                  unreadCount={Math.max(0, 4 - readNotificationIds.length)}
+                  currentLanguage={currentLanguage}
+                  onActiveSchemeChange={setActiveHomeScheme}
+                  registerBackHandler={(h) => {
+                    homeBackRef.current = h;
+                  }}
+                />
+              </View>
             )}
 
-            {activeTab === 'schemes' && (
-              <SchemesScreen
-                schemes={dynamicSchemes}
-                onViewDocs={handleViewDocs}
-                onOpenMitraAI={() => navigateToTab('mitra')}
-                currentLanguage={currentLanguage}
-                isRefreshing={isFetchingSchemes}
-                onRefresh={() => fetchSchemes()}
-              />
+            {visitedTabs.schemes && (
+              <View style={[styles.tabScreenContainer, activeTab !== 'schemes' && styles.hiddenScreen]}>
+                <SchemesScreen
+                  schemes={dynamicSchemes}
+                  isActive={activeTab === 'schemes'}
+                  userEmail={loggedInEmail || undefined}
+                  onViewDocs={handleViewDocs}
+                  onOpenMitraAI={() => navigateToTab('mitra')}
+                  currentLanguage={currentLanguage}
+                  registerBackHandler={(h) => {
+                    schemesBackRef.current = h;
+                  }}
+                />
+              </View>
             )}
 
-            {activeTab === 'mitra' && (
-              <ChatScreen
-                onBack={handleGoBack}
-                onNavigateToSchemes={() => navigateToTab('schemes')}
-                currentLanguage={currentLanguage}
-              />
+            {visitedTabs.mitra && (
+              <View style={[styles.tabScreenContainer, activeTab !== 'mitra' && styles.hiddenScreen]}>
+                <ChatScreen
+                  onBack={handleGoBack}
+                  onNavigateToSchemes={() => navigateToTab('schemes')}
+                  currentLanguage={currentLanguage}
+                  registerBackHandler={(h) => {
+                    chatBackRef.current = h;
+                  }}
+                  onProfileUpdated={(updatedProfile) => {
+                    if (!updatedProfile || typeof updatedProfile !== 'object') return;
+                    setCurrentUser((prev) => ({
+                      ...prev,
+                      name: updatedProfile.name || prev.name,
+                      nameEn: updatedProfile.name || prev.nameEn,
+                      nameHi: updatedProfile.name || prev.nameHi,
+                      eligibleSchemeIds: updatedProfile.eligibleSchemeIds || prev.eligibleSchemeIds,
+                      profile: {
+                        ...prev.profile,
+                        ...updatedProfile,
+                      },
+                    }));
+                  }}
+                />
+              </View>
             )}
 
+            {visitedTabs.profile && (
+              <View style={[styles.tabScreenContainer, activeTab !== 'profile' && styles.hiddenScreen]}>
+                <ProfileScreen
+                  onStartReProfiling={() => navigateToTab('mitra')}
+                  activeDemoUser={activeDemoUser}
+                  onOpenUserSwitcher={() => navigateToTab('profile')}
+                  currentLanguage={currentLanguage}
+                  onLanguageChange={setCurrentLanguage}
+                  registerBackHandler={(h) => {
+                    profileBackRef.current = h;
+                  }}
+                  onLogout={async () => {
+                    await AuthStore.logout();
+                    setIsLoggedIn(false);
+                    setHasSelectedLanguage(false);
+                    setActiveTab('home');
+                    setNavHistory(['home']);
+                  }}
+                  onUpdateAvatar={(newImageSource) => {
+                    setCurrentUser((prev) => ({
+                      ...prev,
+                      image: newImageSource,
+                    }));
+                  }}
+                  onUpdateProfile={async (updatedProfile, updatedName) => {
+                    setCurrentUser((prev) => ({
+                      ...prev,
+                      name: updatedName || prev.name,
+                      nameEn: updatedName || prev.nameEn,
+                      nameHi: updatedName || prev.nameHi,
+                      profile: {
+                        ...prev.profile,
+                        ...updatedProfile,
+                      },
+                    }));
 
-
-            {activeTab === 'profile' && (
-              <ProfileScreen
-                onStartReProfiling={() => navigateToTab('mitra')}
-                activeDemoUser={activeDemoUser}
-                onOpenUserSwitcher={() => setIsUserSwitcherVisible(true)}
-                currentLanguage={currentLanguage}
-                onLanguageChange={setCurrentLanguage}
-                onLogout={() => {
-                  setIsLoggedIn(false);
-                  setHasSelectedLanguage(false);
-                  setActiveTab('home');
-                  setNavHistory(['home']);
-                }}
-                onUpdateAvatar={(newImageSource) => {
-                  setActiveDemoUser((prev) => ({
-                    ...prev,
-                    image: newImageSource,
-                  }));
-                }}
-                onUpdateProfile={(updatedProfile, updatedName) => {
-                  setActiveDemoUser((prev) => ({
-                    ...prev,
-                    name: updatedName || prev.name,
-                    nameEn: updatedName || prev.nameEn,
-                    nameHi: updatedName || prev.nameHi,
-                    profile: {
-                      ...prev.profile,
-                      ...updatedProfile,
-                    },
-                  }));
-                }}
-              />
+                    // Sync to MongoDB backend
+                    try {
+                      await apiClient.put('/api/profile', {
+                        ...updatedProfile,
+                        name: updatedName,
+                      });
+                    } catch (err) {
+                      console.log('Profile sync error:', err);
+                    }
+                  }}
+                />
+              </View>
             )}
           </View>
 
@@ -447,18 +618,6 @@ export default function App() {
         </>
       )}
 
-      {/* Demo Citizen Switcher Modal */}
-      <UserSwitcherModal
-        visible={isUserSwitcherVisible}
-        activeUserId={activeDemoUser.id}
-        onSelectUser={(user) => setActiveDemoUser(user)}
-        onClose={() => setIsUserSwitcherVisible(false)}
-        currentLanguage={currentLanguage}
-      />
-
-
-
-
     </View>
   );
 }
@@ -470,6 +629,12 @@ const styles = StyleSheet.create({
   },
   screenArea: {
     flex: 1,
+  },
+  tabScreenContainer: {
+    flex: 1,
+  },
+  hiddenScreen: {
+    display: 'none',
   },
   modalOverlay: {
     flex: 1,

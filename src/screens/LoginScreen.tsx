@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,6 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  BackHandler,
+  ToastAndroid,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
@@ -18,14 +20,12 @@ import AuthStore from '../store/AuthStore';
 
 interface LoginScreenProps {
   onLoginSuccess: (userName: string, email: string) => void;
-  onDemoLogin: () => void;
   currentLanguage?: SupportedLanguage;
   onLanguageChange?: (lang: SupportedLanguage) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
-  onDemoLogin,
   currentLanguage = 'hi',
   onLanguageChange,
 }) => {
@@ -37,6 +37,39 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const lastBackPressRef = useRef<number>(0);
+
+  // Step-by-step back navigation on Login Screen
+  useEffect(() => {
+    const onBackPress = () => {
+      // Step 1: If on Signup form, step back to Login form!
+      if (authMode === 'signup') {
+        setAuthMode('login');
+        setErrorMessage(null);
+        return true;
+      }
+
+      // Step 2: On Login form, double-tap back within 2 seconds to exit gracefully
+      const now = Date.now();
+      if (lastBackPressRef.current && now - lastBackPressRef.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      lastBackPressRef.current = now;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          isEn ? 'Press back again to exit' : 'ऐप बंद करने के लिए दोबारा बैक दबाएं',
+          ToastAndroid.SHORT
+        );
+      }
+      return true;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [authMode, isEn]);
 
   const handleAuth = async () => {
     setErrorMessage(null);
@@ -77,8 +110,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   const handleGoogleSignIn = () => {
-    setErrorMessage(null);
-    onLoginSuccess('Ramesh Kumar', 'demo@example.com');
+    setErrorMessage(
+      isEn
+        ? 'Google Sign-In will be available soon. Please use Email & Password.'
+        : 'Google साइन-इन जल्द ही उपलब्ध होगा। कृपया ईमेल और पासवर्ड का उपयोग करें।'
+    );
   };
 
   return (

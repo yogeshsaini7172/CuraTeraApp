@@ -5,14 +5,32 @@
 import apiClient from './client';
 import { Scheme } from '../types';
 
+export interface GetSchemesParams {
+  page?: number;
+  limit?: number;
+  category?: string;
+  q?: string;
+  email?: string;
+}
+
+export interface PaginatedSchemesResponse {
+  schemes: Scheme[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasMore: boolean;
+  eligibleCount: number;
+}
+
 export const schemesApi = {
   /**
-   * Fetch all schemes from backend.
-   * Optionally pass user email for personalized eligibility sorting.
+   * Fetch paginated schemes from backend.
+   * Loads in chunks (e.g. 10 at a time) on scroll.
    */
-  getSchemes: async (email?: string): Promise<Scheme[]> => {
-    const res = await apiClient.get<Scheme[]>('/api/schemes/', {
-      params: email ? { email } : undefined,
+  getSchemes: async (params?: GetSchemesParams): Promise<PaginatedSchemesResponse> => {
+    const res = await apiClient.get<PaginatedSchemesResponse>('/api/schemes', {
+      params,
     });
     return res.data;
   },
@@ -27,3 +45,4 @@ export const schemesApi = {
     return res.data;
   },
 };
+
