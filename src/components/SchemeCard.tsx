@@ -23,7 +23,7 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({
     : (scheme.categoryLabelHi || scheme.category);
   const benefit = isEn
     ? (scheme.benefitAmountEn || scheme.benefitAmount)
-    : (scheme.benefitAmountHi || scheme.benefitAmount);
+    : (scheme.benefitAmountHi || (scheme.benefitAmount === 'Refer to docs' ? 'दस्तावेज़ देखें' : scheme.benefitAmount));
 
   const isEligible = Boolean(scheme.isEligible);
 
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3.5,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#dceafcff',
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: 6,

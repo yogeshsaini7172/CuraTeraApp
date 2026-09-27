@@ -65,7 +65,9 @@ export interface DocumentItem {
 }
 
 export interface UserProfile {
-  name: string;
+  name?: string;
+  fullName?: string;
+  profileImage?: string;
   age?: number | null;
   state?: string;
   stateHi?: string;

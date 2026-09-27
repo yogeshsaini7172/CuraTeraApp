@@ -44,6 +44,13 @@ const FILTER_OPTIONS = [
 
 const PAGE_SIZE = 10;
 
+// Module-level cache to prevent flicker when unmounting (e.g. going to detail screen) and remounting
+let cachedServerSchemes: Scheme[] | null = null;
+let cachedTotalCount: number = 0;
+let cachedEligibleCount: number = 0;
+let cachedPage: number = 1;
+let cachedHasMore: boolean = true;
+
 export const SchemesScreen: React.FC<SchemesScreenProps> = ({
   schemes: initialFallbackSchemes,
   onViewDocs,
@@ -56,15 +63,15 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
 
   // Server-driven pagination states
   const [displayedSchemes, setDisplayedSchemes] = useState<Scheme[]>(() =>
-    initialFallbackSchemes.slice(0, PAGE_SIZE)
+    cachedServerSchemes ? cachedServerSchemes : initialFallbackSchemes.slice(0, PAGE_SIZE)
   );
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [currentPage, setCurrentPage] = useState<number>(() => cachedPage);
+  const [hasMore, setHasMore] = useState<boolean>(() => cachedHasMore);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [totalCount, setTotalCount] = useState<number>(initialFallbackSchemes.length);
-  const [eligibleCount, setEligibleCount] = useState<number>(() =>
-    initialFallbackSchemes.filter((s) => s.isEligible).length
+  const [totalCount, setTotalCount] = useState<number>(() => cachedTotalCount || initialFallbackSchemes.length);
+  const [eligibleCount, setEligibleCount] = useState<number>(() => 
+    cachedEligibleCount || initialFallbackSchemes.filter((s) => s.isEligible).length
   );
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,25 +98,33 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
         if (res && Array.isArray(res.schemes)) {
           if (pageToFetch === 1 || isRefresh) {
             setDisplayedSchemes(res.schemes);
+            cachedServerSchemes = res.schemes;
           } else {
             setDisplayedSchemes((prev) => {
               const existingIds = new Set(prev.map((s) => s.id));
               const newItems = res.schemes.filter((s) => !existingIds.has(s.id));
-              return [...prev, ...newItems];
+              const updated = [...prev, ...newItems];
+              cachedServerSchemes = updated;
+              return updated;
             });
           }
 
           setCurrentPage(res.page);
+          cachedPage = res.page;
           setHasMore(Boolean(res.hasMore));
+          cachedHasMore = Boolean(res.hasMore);
           setTotalCount(res.total);
+          cachedTotalCount = res.total;
           if (typeof res.eligibleCount === 'number') {
             setEligibleCount(res.eligibleCount);
+            cachedEligibleCount = res.eligibleCount;
           }
         }
       } catch (err) {
         console.log('Server schemes fetch error, falling back to local dataset:', err);
         // Seamless fallback to local dataset if server is unreachable
         if (pageToFetch === 1) {
+
           const filtered = initialFallbackSchemes.filter((s) => {
             const matchesCat =
               categoryToFetch === 'all'

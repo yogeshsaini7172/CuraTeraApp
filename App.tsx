@@ -193,6 +193,29 @@ export default function App() {
       });
       return newTab;
     });
+
+    // Auto-refresh profile from MongoDB when navigating to profile tab
+    if (newTab === 'profile') {
+      apiClient
+        .get('/api/profile')
+        .then((res) => {
+          if (res.data?.profile) {
+            const p = res.data.profile;
+            setCurrentUser((prev) => ({
+              ...prev,
+              fullName: p.fullName || prev.fullName,
+              name: p.fullName || p.name || prev.name,
+              nameEn: p.fullName || p.name || prev.nameEn,
+              nameHi: p.fullName || p.name || prev.nameHi,
+              profile: {
+                ...prev.profile,
+                ...p,
+              },
+            }));
+          }
+        })
+        .catch((e) => console.log('Profile refresh on tab switch:', e?.message));
+    }
   }, []);
 
   const handleCloseDocsModal = useCallback(() => {
@@ -287,11 +310,11 @@ export default function App() {
 
   // Dynamically calculate scheme eligibility strictly based on citizen's actual profile details
   const dynamicSchemes = useMemo(() => {
-    const p = activeDemoUser.profile;
-    const hasOcc = Boolean(p?.occupation && p.occupation.trim());
-    const hasIncome = Boolean(p?.annualIncome && p.annualIncome.trim());
+    const p = activeDemoUser?.profile;
+    const hasOcc = Boolean(p?.occupation && String(p.occupation).trim());
+    const hasIncome = Boolean(p?.annualIncome !== undefined && p?.annualIncome !== null && String(p.annualIncome).trim());
     const hasAge = p?.age !== null && p?.age !== undefined && String(p.age).trim() !== '';
-    const hasExplicit = Boolean(activeDemoUser.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
+    const hasExplicit = Boolean(activeDemoUser?.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
     const isProfileProper = hasOcc || hasIncome || hasAge || hasExplicit;
 
     // Strict real-world rule: Incomplete / blank profile -> ZERO eligibility!
@@ -303,7 +326,7 @@ export default function App() {
       }));
     }
 
-    const eligibleIds = activeDemoUser.eligibleSchemeIds || [];
+    const eligibleIds = Array.isArray(activeDemoUser?.eligibleSchemeIds) ? activeDemoUser.eligibleSchemeIds : [];
     return SCHEMES.map((scheme) => ({
       ...scheme,
       isEligible: eligibleIds.includes(scheme.id),
@@ -542,9 +565,10 @@ export default function App() {
                     if (!updatedProfile || typeof updatedProfile !== 'object') return;
                     setCurrentUser((prev) => ({
                       ...prev,
-                      name: updatedProfile.name || prev.name,
-                      nameEn: updatedProfile.name || prev.nameEn,
-                      nameHi: updatedProfile.name || prev.nameHi,
+                      fullName: updatedProfile.fullName || prev.fullName,
+                      name: updatedProfile.fullName || updatedProfile.name || prev.name,
+                      nameEn: updatedProfile.fullName || updatedProfile.name || prev.nameEn,
+                      nameHi: updatedProfile.fullName || updatedProfile.name || prev.nameHi,
                       eligibleSchemeIds: updatedProfile.eligibleSchemeIds || prev.eligibleSchemeIds,
                       profile: {
                         ...prev.profile,
