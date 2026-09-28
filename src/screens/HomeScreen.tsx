@@ -290,11 +290,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
     const timer = setInterval(() => {
       setActiveIndex((prev) => {
-        const nextIndex = (prev + 1) % displaySchemes.length;
+        const nextIndex = prev + 1;
+        
         scrollRef.current?.scrollTo({
           x: nextIndex * (CARD_WIDTH + CARD_GAP),
           animated: true,
         });
+
+        if (nextIndex >= displaySchemes.length) {
+          // It's animating to the clone at the end. Wait for animation then snap back.
+          setTimeout(() => {
+            scrollRef.current?.scrollTo({
+              x: 0,
+              animated: false,
+            });
+          }, 350);
+          return 0; // State visually snaps to theme 0
+        }
+        
         return nextIndex;
       });
     }, 3500);
@@ -315,7 +328,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / (CARD_WIDTH + CARD_GAP));
+    let index = Math.round(offsetX / (CARD_WIDTH + CARD_GAP));
+    
+    if (index >= displaySchemes.length) {
+      index = 0;
+    }
+    
     if (index !== activeIndex && index >= 0 && index < displaySchemes.length) {
       setActiveIndex(index);
     }
@@ -418,7 +436,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onTouchStart={handleTouchStart}
             onScrollBeginDrag={handleTouchStart}
           >
-            {displaySchemes.map((scheme, index) => {
+            {[...displaySchemes, displaySchemes[0]].filter(Boolean).map((scheme, rawIndex) => {
+              // Ensure we use the actual index for calculations (0 for the clone)
+              const index = rawIndex >= displaySchemes.length ? 0 : rawIndex;
               const isVoiceAi = scheme.id === 'intro-voice-mitra';
               const title = isEn ? scheme.titleEn : scheme.titleHi;
               const benefit = isEn
@@ -460,7 +480,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
               return (
                 <TouchableOpacity
-                  key={scheme.id}
+                  key={`${scheme.id}-${rawIndex}`}
                   style={[
                     styles.heroCard,
                     {
