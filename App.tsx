@@ -92,7 +92,10 @@ const createCitizenUser = (email: string, name?: string, profileData?: Partial<U
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
-  const [showSplash, setShowSplash] = useState<boolean>(false);
+  // isAppReady = false → Splash shown. Set to true only after BOTH:
+  //   a) minimum 4-second branded splash has elapsed
+  //   b) authentication check (AsyncStorage + server verify) is complete
+  const [isAppReady, setIsAppReady] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [loggedInEmail, setLoggedInEmail] = useState<string>('');
   const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
@@ -120,7 +123,7 @@ export default function App() {
   // 4. Notifications & Modals State
   const [isNotificationVisible, setIsNotificationVisible] = useState<boolean>(false);
   const [returnToNotificationOnBack, setReturnToNotificationOnBack] = useState<boolean>(false);
-  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(['notif-3', 'notif-4']);
+  const [hasNewNotifications, setHasNewNotifications] = useState<boolean>(false);
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
@@ -142,16 +145,16 @@ export default function App() {
     }
   }, [isLoggedIn]);
 
-  // 5a. Restore session from local cache on app start - Strictly verified with MongoDB backend
+  // 5a. Splash + Auth: run minimum 4s branded screen AND auth check in parallel.
+  //      Navigate only after BOTH are done (whichever takes longer wins).
   useEffect(() => {
-    async function restoreSession() {
-      const session = await AuthStore.restore();
-      if (!session) {
-        setIsLoggedIn(false);
-        return;
-      }
+    const MIN_SPLASH_MS = 4000;
 
-      // STRICT CHECK: Verify with MongoDB server that this user actually exists
+    async function checkAuth() {
+      const session = await AuthStore.restore();
+      if (!session) return; // not logged in
+
+      // Verify token is still valid on server
       try {
         const res = await apiClient.get('/api/profile');
         if (res.data?.profile) {
@@ -159,18 +162,23 @@ export default function App() {
           setLoggedInEmail(session.user.email);
           setCurrentUser(createCitizenUser(session.user.email, session.user.displayName, p));
           setIsLoggedIn(true);
-          setHasSelectedLanguage(true); // Skip language screen for returning verified users
+          setHasSelectedLanguage(true);
         } else {
-          throw new Error('User profile not found on server');
+          throw new Error('Profile not found');
         }
-      } catch (err: any) {
-        // User not in MongoDB / token invalid -> Force logout and keep on Login/Signup screen!
-        console.log('Session verification failed on server, forcing Login/Signup:', err?.message);
+      } catch {
         await AuthStore.logout();
-        setIsLoggedIn(false);
       }
     }
-    restoreSession();
+
+    const minDelay = new Promise<void>((resolve) =>
+      setTimeout(resolve, MIN_SPLASH_MS)
+    );
+
+    // Both must complete before we show the real screen
+    Promise.all([minDelay, checkAuth()]).then(() => {
+      setIsAppReady(true);
+    });
   }, []);
 
   // 5b. FCM Push Notification Setup
@@ -188,7 +196,9 @@ export default function App() {
     }
     setupFCM();
 
-    const unsubscribe = onForegroundMessage();
+    const unsubscribe = onForegroundMessage(() => {
+      setHasNewNotifications(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -393,17 +403,19 @@ export default function App() {
 
   const statusBarHeight = RNStatusBar.currentHeight || 28;
 
-  // 1. Splash Screen Phase
-  if (showSplash) {
+  // ─── Splash Phase ───────────────────────────────────────────────────────────
+  // Shown until BOTH the 4-second minimum AND auth check complete.
+  // Dark branded background — never a white flash.
+  if (!isAppReady) {
     return (
       <View style={{ flex: 1, backgroundColor: '#0A2540' }}>
         <RNStatusBar barStyle="light-content" backgroundColor="#0A2540" translucent={true} />
-        <SplashScreen onFinish={() => setShowSplash(false)} />
+        <SplashScreen />
       </View>
     );
   }
 
-  // 2. Login Phase
+  // ─── Login Phase ─────────────────────────────────────────────────────────────
   if (!isLoggedIn) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -500,10 +512,6 @@ export default function App() {
             setReturnToNotificationOnBack(false);
           }}
           currentLanguage={currentLanguage}
-          readNotificationIds={readNotificationIds}
-          onMarkNotificationAsRead={(id) => {
-            setReadNotificationIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-          }}
           onSelectScheme={(scheme) => {
             setReturnToNotificationOnBack(true);
             setSelectedSchemeForDocs(scheme);
@@ -519,10 +527,10 @@ export default function App() {
               onBackPress={handleGoBack}
               activeDemoUser={activeDemoUser}
               onOpenUserSwitcher={() => navigateToTab('profile')}
-              onOpenNotifications={() => setIsNotificationVisible(true)}
+              onOpenNotifications={() => { setIsNotificationVisible(true); setHasNewNotifications(false); }}
               onNavigateToProfile={() => navigateToTab('profile')}
               eligibleCount={eligibleCount}
-              unreadCount={Math.max(0, 4 - readNotificationIds.length)}
+              unreadCount={hasNewNotifications ? 1 : 0}
               currentLanguage={currentLanguage}
               themeLight={activeHomeScheme?.themeLight}
               themeColor={activeHomeScheme?.themeColor}
@@ -542,9 +550,9 @@ export default function App() {
                   activeUser={activeDemoUser}
                   onOpenProfile={() => navigateToTab('profile')}
                   onOpenUserSwitcher={() => navigateToTab('profile')}
-                  onOpenNotifications={() => setIsNotificationVisible(true)}
+                  onOpenNotifications={() => { setIsNotificationVisible(true); setHasNewNotifications(false); }}
                   eligibleCount={eligibleCount}
-                  unreadCount={Math.max(0, 4 - readNotificationIds.length)}
+                  unreadCount={hasNewNotifications ? 1 : 0}
                   currentLanguage={currentLanguage}
                   onActiveSchemeChange={setActiveHomeScheme}
                   registerBackHandler={(h) => {

@@ -32,85 +32,21 @@ interface NotificationsScreenProps {
   onBack: () => void;
   currentLanguage: SupportedLanguage;
   onSelectScheme?: (scheme: Scheme) => void;
-  readNotificationIds?: string[];
-  onMarkNotificationAsRead?: (id: string) => void;
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    schemeId: 'pm-kisan',
-    category: 'schemes',
-    highlightEn: '₹2,000 Credited: ',
-    highlightHi: '₹2,000 जमा: ',
-    titleEn: '17th installment of PM-Kisan Samman Nidhi has been credited to your Aadhaar-linked bank account.',
-    titleHi: 'पीएम-किसान सम्मान निधि की 17वीं किस्त आपके आधार-लिंक्ड बैंक खाते में ट्रांसफर कर दी गई है।',
-    descEn: 'Direct Benefit Transfer (DBT) completed successfully.',
-    descHi: 'प्रत्यक्ष लाभ अंतरण (DBT) सफलतापूर्वक पूरा हुआ।',
-    timeEn: '1h',
-    timeHi: '1h',
-    isRead: false,
-  },
-  {
-    id: 'notif-2',
-    schemeId: 'ayushman-bharat',
-    category: 'schemes',
-    highlightEn: 'Ayushman Bharat: ',
-    highlightHi: 'आयुष्मान भारत: ',
-    titleEn: 'Your Golden e-Card is now active with ₹5 Lakh cashless treatment cover.',
-    titleHi: 'आपका गोल्डन ई-कार्ड सक्रिय हो गया है। ₹5 लाख तक का कैशलेस इलाज उपलब्ध है।',
-    descEn: 'Digital card active for hospital treatment.',
-    descHi: 'अस्पताल में मुफ़्त उपचार हेतु डिजिटल कार्ड सक्रिय।',
-    timeEn: '2h',
-    timeHi: '2h',
-    isRead: false,
-  },
-  {
-    id: 'notif-3',
-    schemeId: 'pm-kisan',
-    category: 'alert',
-    highlightEn: 'Aadhaar e-KYC: ',
-    highlightHi: 'आधार ई-केवाईसी: ',
-    titleEn: 'Verification due before 30th September to continue receiving direct financial subsidies.',
-    titleHi: 'सरकारी योजनाओं का निर्बाध लाभ पाने के लिए 30 सितंबर से पहले आधार ई-केवाईसी अवश्य पूरी करें।',
-    descEn: 'Last 7 days remaining for verification.',
-    descHi: 'सत्यापन के लिए अंतिम 7 दिन शेष।',
-    timeEn: '5h',
-    timeHi: '5h',
-    isRead: true,
-  },
-  {
-    id: 'notif-4',
-    schemeId: 'pmay-g',
-    category: 'schemes',
-    highlightEn: 'PM Awas Yojana: ',
-    highlightHi: 'पीएम आवास योजना: ',
-    titleEn: 'House foundation geo-tagging has been verified by the Block Development Office.',
-    titleHi: 'मकान की नींव का स्थलीय जियो-टैगिंग निरीक्षण खंड विकास अधिकारी द्वारा स्वीकृत कर दिया गया है।',
-    descEn: 'Foundation inspection report approved by BDO.',
-    descHi: 'खंड विकास अधिकारी द्वारा स्थलीय निरीक्षण स्वीकृत।',
-    timeEn: '1d',
-    timeHi: '1d',
-    isRead: true,
-  },
-];
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [];
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   onBack,
   currentLanguage,
   onSelectScheme,
-  readNotificationIds,
-  onMarkNotificationAsRead,
 }) => {
   const isEn = currentLanguage === 'en';
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [activeTab, setActiveTab] = useState<'all' | 'schemes' | 'alert'>('all');
 
   const handlePressNotification = (item: NotificationItem) => {
-    // 1. Mark as read immediately in parent & local state
-    if (onMarkNotificationAsRead) {
-      onMarkNotificationAsRead(item.id);
-    }
+    // 1. Mark as read immediately in local state
     setNotifications((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
@@ -227,9 +163,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
             const desc = isEn ? item.descEn : item.descHi;
             const time = isEn ? item.timeEn : item.timeHi;
 
-            const isItemRead = readNotificationIds
-              ? readNotificationIds.includes(item.id)
-              : item.isRead;
+            const isItemRead = item.isRead;
 
             return (
               <TouchableOpacity

@@ -73,6 +73,28 @@ const AuthStore = {
   },
 
   /**
+   * Log in via Firebase Auth ID Token (Google, etc).
+   * mode: 'login' → only sign in existing users (returns 404 if not found)
+   * mode: 'signup' → register new user first, then sign in (returns 409 if exists)
+   */
+  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' = 'login'): Promise<AuthSession> => {
+    const data = await authApi.firebaseLogin(id_token, mode);
+
+    const user: StoredUser = {
+      email: data.user?.email || '',
+      displayName: data.user?.name || 'Citizen',
+    };
+
+    // Cache locally for next app launch
+    await AsyncStorage.multiSet([
+      [TOKEN_KEY, data.token],
+      [USER_KEY, JSON.stringify(user)],
+    ]);
+
+    return { token: data.token, user };
+  },
+
+  /**
    * Restore a previously saved session from local storage.
    * Call this on app startup to skip the login screen if already logged in.
    */
