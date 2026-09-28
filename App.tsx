@@ -16,7 +16,7 @@ import { Ionicons } from './src/utils/icons';
 import Speech from './src/utils/speech';
 import { Colors } from './src/theme/colors';
 import { NavTab, Scheme } from './src/types';
-import { SCHEMES, CATEGORIES } from './src/data/schemesData';
+import { CATEGORIES } from './src/data/schemesData';
 import { Header } from './src/components/Header';
 import { BottomNavBar } from './src/components/BottomNavBar';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -123,6 +123,23 @@ export default function App() {
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
+
+  // 4b. Real Backend Schemes State
+  const [realSchemes, setRealSchemes] = useState<Scheme[]>([]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      apiClient.get('/api/schemes?all=true')
+        .then((res) => {
+          if (Array.isArray(res.data)) {
+            setRealSchemes(res.data);
+          } else if (res.data?.schemes) {
+            setRealSchemes(res.data.schemes);
+          }
+        })
+        .catch((err) => console.log('Error fetching backend schemes:', err?.message));
+    }
+  }, [isLoggedIn]);
 
   // 5a. Restore session from local cache on app start - Strictly verified with MongoDB backend
   useEffect(() => {
@@ -319,7 +336,7 @@ export default function App() {
 
     // Strict real-world rule: Incomplete / blank profile -> ZERO eligibility!
     if (!isProfileProper) {
-      return SCHEMES.map((scheme) => ({
+      return realSchemes.map((scheme) => ({
         ...scheme,
         isEligible: false,
         matchPercentage: 0,
@@ -327,12 +344,12 @@ export default function App() {
     }
 
     const eligibleIds = Array.isArray(activeDemoUser?.eligibleSchemeIds) ? activeDemoUser.eligibleSchemeIds : [];
-    return SCHEMES.map((scheme) => ({
+    return realSchemes.map((scheme) => ({
       ...scheme,
       isEligible: eligibleIds.includes(scheme.id),
       matchPercentage: eligibleIds.includes(scheme.id) ? 100 : 0,
     }));
-  }, [activeDemoUser]);
+  }, [activeDemoUser, realSchemes]);
 
   const eligibleCount = useMemo(() => {
     return dynamicSchemes.filter((s) => s.isEligible).length;

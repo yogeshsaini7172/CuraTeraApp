@@ -122,10 +122,21 @@ const VOICE_AI_CARD: Scheme = {
   requiredDocsEn: ['Speak by voice', 'No typing needed'],
   officialUrl: 'https://www.india.gov.in',
   helplinePhone: '1800111555',
+  image: require('../../assets/scheme_women.jpg'),
   themeColor: '#4F46E5',
   themeLight: '#EEF2FF',
   themeBorder: '#818CF8',
   themeDark: '#1E1B4B',
+};
+
+const CATEGORY_THEMES: Record<string, { themeColor: string; themeLight: string; themeBorder: string; themeDark: string }> = {
+  farming: { themeColor: '#EA580C', themeLight: '#FED7AA', themeBorder: '#FDBA74', themeDark: '#9A3412' },
+  housing: { themeColor: '#1D4ED8', themeLight: '#BFDBFE', themeBorder: '#93C5FD', themeDark: '#1E3A8A' },
+  health: { themeColor: '#059669', themeLight: '#A7F3D0', themeBorder: '#6EE7B7', themeDark: '#065F46' },
+  education: { themeColor: '#7C3AED', themeLight: '#DDD6FE', themeBorder: '#C4B5FD', themeDark: '#5B21B6' },
+  pension: { themeColor: '#BE123C', themeLight: '#FECDD3', themeBorder: '#FDA4AF', themeDark: '#881337' },
+  business: { themeColor: '#D97706', themeLight: '#FDE68A', themeBorder: '#FCD34D', themeDark: '#B45309' },
+  default: { themeColor: '#475569', themeLight: '#F1F5F9', themeBorder: '#CBD5E1', themeDark: '#334155' }
 };
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -166,14 +177,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [handleInternalBack, registerBackHandler]);
 
   // 1. Initial Load: Pick 8 diverse/random schemes from available list
-  const [initialRandomPool] = useState<Scheme[]>(() => {
-    const copy = [...schemes];
-    for (let i = copy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copy[i], copy[j]] = [copy[j], copy[i]];
+  const [initialRandomPool, setInitialRandomPool] = useState<Scheme[]>([]);
+  
+  // Helper to pick diverse schemes without consecutive same-color
+  const pickDiverseSchemes = useCallback((source: Scheme[], count: number, startCats: string[] = []) => {
+    const selected: Scheme[] = [];
+    const recentCats = [...startCats];
+    
+    for (const scheme of source) {
+      if (selected.length >= count) break;
+      const cat = scheme.category || 'default';
+      
+      // Ensure color is different from the last 2-3 colors
+      if (!recentCats.includes(cat)) {
+        selected.push(scheme);
+        recentCats.push(cat);
+        if (recentCats.length > 3) {
+          recentCats.shift(); // Keep track of last 3 colors
+        }
+      }
     }
-    return copy.slice(0, 8);
-  });
+    
+    // Fallback if we ran out of unique colors
+    if (selected.length < count) {
+      for (const scheme of source) {
+        if (selected.length >= count) break;
+        if (!selected.find(s => s.id === scheme.id)) {
+          selected.push(scheme);
+        }
+      }
+    }
+    return selected;
+  }, []);
+
+  useEffect(() => {
+    if (schemes.length > 0 && initialRandomPool.length === 0) {
+      const copy = [...schemes];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      // Voice AI is 'farming', so avoid it for the next few
+      setInitialRandomPool(pickDiverseSchemes(copy, 8, ['farming']));
+    }
+  }, [schemes, initialRandomPool.length, pickDiverseSchemes]);
+
 
   // 2. Dynamic Schemes (Voice AI Card + random pool or search matches)
   const displaySchemes = useMemo(() => {
@@ -198,18 +246,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   // Top 3 schemes recommended by CuraTerra-AI Recommendation Agent
   const recommendedSchemes = useMemo(() => {
     const eligible = schemes.filter((s) => s.isEligible);
-    return eligible.length > 0 ? eligible.slice(0, 3) : schemes.slice(0, 3);
-  }, [schemes]);
+    const sourcePool = eligible.length > 0 ? eligible : schemes;
+    // We want 3 recommendations that are diverse in color
+    return pickDiverseSchemes(sourcePool, 3);
+  }, [schemes, pickDiverseSchemes]);
+
+  const currentActiveScheme = displaySchemes[activeIndex] || displaySchemes[0];
+  const isCurrentVoiceAi = currentActiveScheme?.id === 'intro-voice-mitra';
+  const activeCatTheme = CATEGORY_THEMES[currentActiveScheme?.category || ''] || CATEGORY_THEMES.default;
+  
+  const activeThemeDark = isCurrentVoiceAi ? (currentActiveScheme?.themeDark || '#1E3A8A') : activeCatTheme.themeDark;
+  const activeThemeLight = isCurrentVoiceAi ? (currentActiveScheme?.themeLight || '#EFF6FF') : activeCatTheme.themeLight;
+  const activeThemeColor = isCurrentVoiceAi ? currentActiveScheme?.themeColor : activeCatTheme.themeColor;
 
   // Notify parent of active scheme so colors sync seamlessly
   useEffect(() => {
     if (displaySchemes.length > 0) {
       const active = displaySchemes[activeIndex] || displaySchemes[0];
-      onActiveSchemeChange?.(active);
+      // Override backend colors with local theme so Header receives the correct vibrant colors
+      const overriddenActive = active.id === 'intro-voice-mitra' ? active : {
+        ...active,
+        themeColor: activeCatTheme.themeColor,
+        themeLight: activeCatTheme.themeLight,
+        themeDark: activeCatTheme.themeDark,
+        themeBorder: activeCatTheme.themeBorder
+      };
+      onActiveSchemeChange?.(overriddenActive);
     } else {
       onActiveSchemeChange?.(null);
     }
-  }, [activeIndex, displaySchemes, onActiveSchemeChange]);
+  }, [activeIndex, displaySchemes, onActiveSchemeChange, activeCatTheme]);
 
   // Auto-slide carousel every 3.5 seconds with smart pause on touch
   const [isUserInteracting, setIsUserInteracting] = useState(false);
@@ -251,10 +317,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   };
 
-  const currentActiveScheme = displaySchemes[activeIndex] || displaySchemes[0];
-  const activeThemeDark = currentActiveScheme?.themeDark || '#1E3A8A';
-  const activeThemeLight = currentActiveScheme?.themeLight || '#EFF6FF';
-
   // RGB for smooth linear color-to-white mixing
   const rgb = useMemo(() => hexToRgb(activeThemeLight), [activeThemeLight]);
 
@@ -280,7 +342,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             unreadCount={unreadCount}
             currentLanguage={currentLanguage}
             themeLight={activeThemeLight}
-            themeColor={currentActiveScheme?.themeColor}
+            themeColor={activeThemeColor}
           />
         </View>
 
@@ -360,29 +422,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 : (scheme.benefitAmountHi || scheme.benefitAmount);
               const infoText = isEn ? scheme.descriptionEn : scheme.descriptionHi;
 
-              const themeDark = scheme.themeDark || '#1E293B';
-              const themeBorder = scheme.themeBorder || '#FDBA74';
+              const catTheme = CATEGORY_THEMES[scheme.category || ''] || CATEGORY_THEMES.default;
+              const themeDark = isVoiceAi ? (scheme.themeDark || '#1E293B') : catTheme.themeDark;
+              const themeBorder = isVoiceAi ? (scheme.themeBorder || '#FDBA74') : catTheme.themeBorder;
               const cardTextColors = getCardTextColors(scheme, isVoiceAi);
 
               // First card (Voice AI) stays rich dark (#1E1B4B).
               // Other scheme cards are made slightly lighter and fresher than themeDark.
               const cardBgColor = isVoiceAi
                 ? themeDark
-                : lightenColor(scheme.themeColor || '#2563EB', 0.16);
+                : lightenColor(catTheme.themeColor || '#2563EB', 0.16);
               const cardBorderColor = isVoiceAi
                 ? themeBorder
-                : (scheme.themeBorder || '#93C5FD');
+                : catTheme.themeBorder;
 
-              // High-Res Unique Category Image
-              const schemeImage =
-                scheme.image ||
-                (scheme.category === 'housing'
-                  ? require('../../assets/scheme_awas.jpg')
-                  : scheme.category === 'health'
-                  ? require('../../assets/scheme_health.jpg')
-                  : scheme.category === 'education'
-                  ? require('../../assets/scheme_education.jpg')
-                  : require('../../assets/scheme_kisan.jpg'));
+              // High-Res Unique Category Image from Cloudinary
+              // If it's the Voice AI card, it uses a local number require()
+              const customUrl = scheme.image || (scheme as any).imageUrl;
+              
+              let schemeImage;
+              if (typeof customUrl === 'number') {
+                schemeImage = customUrl; // Local require() returns a number in React Native
+              } else if (typeof customUrl === 'string' && customUrl.trim() !== '') {
+                schemeImage = { uri: customUrl };
+              } else {
+                // Fallback default image if missing from backend
+                schemeImage = { uri: 'https://res.cloudinary.com/dykp1kms0/image/upload/v1790577795/curatera_schemes/vqmrt7masfglzztsnoln.jpg' };
+              }
 
               return (
                 <TouchableOpacity

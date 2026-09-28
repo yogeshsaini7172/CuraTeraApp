@@ -23,6 +23,7 @@ import { DemoUser } from '../data/demoUsers';
 import { UserProfile } from '../types';
 import { SupportedLanguage } from '../i18n/translations';
 import { PROFILE_ATTRIBUTES, CATEGORY_LABELS } from '../data/profileAttributes';
+import apiClient from '../api/client';
 
 interface ProfileScreenProps {
   onStartReProfiling?: () => void;
@@ -229,16 +230,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setShowPhotoPickerModal(true);
   };
 
-  const handleApplyPhoto = (uri: string) => {
-    // Show Updating toast with App Logo + small text
+  const handleApplyPhoto = async (uri: string) => {
     setUploadToastStatus('updating');
-    setTimeout(() => {
-      onUpdateAvatar?.({ uri });
-      setUploadToastStatus('success');
-      setTimeout(() => {
-        setUploadToastStatus('idle');
-      }, 2500);
-    }, 800);
+    try {
+      const filename = uri.split('/').pop() || 'profile.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : `image`;
+
+      const formData = new FormData();
+      formData.append('image', {
+        uri,
+        name: filename,
+        type
+      } as any);
+
+      const res = await apiClient.post('/api/profile/upload-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (res.data && res.data.imageUrl) {
+        onUpdateAvatar?.({ uri: res.data.imageUrl });
+        setUploadToastStatus('success');
+      } else {
+        throw new Error('No imageUrl returned');
+      }
+    } catch (err) {
+      console.log('Upload error:', err);
+      Alert.alert(isEn ? 'Error' : 'त्रुटि', isEn ? 'Failed to upload image' : 'फ़ोटो अपलोड विफल');
+      setUploadToastStatus('idle');
+    } finally {
+      setTimeout(() => setUploadToastStatus('idle'), 2500);
+    }
   };
 
   const handleLaunchCamera = async () => {
@@ -722,8 +746,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               onPress={() => setShowFullImageViewer(true)}
               activeOpacity={0.85}
             >
-              {activeDemoUser.image || profile.profileImage ? (
-                <Image source={activeDemoUser.image || {uri: profile.profileImage}} style={styles.avatarImage} />
+              {activeDemoUser.image || profile.profileImage || (profile as any).imageUrl ? (
+                <Image source={activeDemoUser.image || {uri: (profile as any).imageUrl || profile.profileImage}} style={styles.avatarImage} />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Ionicons name="person" size={38} color="#FFFFFF" />
