@@ -47,11 +47,14 @@ export async function getFCMToken(): Promise<string | null> {
 /**
  * Listen for foreground messages and show an alert.
  */
-export function onForegroundMessage() {
+export function onForegroundMessage(onNewMessage?: () => void) {
   try {
     const messaging = getMessaging();
     return onMessage(messaging, async remoteMessage => {
       console.log('FCM foreground message received:', JSON.stringify(remoteMessage));
+      if (onNewMessage) {
+        onNewMessage();
+      }
       const title = remoteMessage.notification?.title || 'CuraTera AI';
       const body = remoteMessage.notification?.body || '';
       Alert.alert(title, body);

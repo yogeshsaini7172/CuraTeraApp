@@ -40,6 +40,7 @@ interface ChatMessage {
   quickReplies?: string[];
   actionType?: 'view_schemes';
   attachment?: ChatAttachment;
+  blocks?: any[];
 }
 
 interface ChatScreenProps {
@@ -441,9 +442,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
     try {
       const response = await chatApi.sendMessage(textToAnalyze);
-      
-      // If AI extracted/updated citizen profile in chat, notify parent
-      if (response.citizen_profile && Object.keys(response.citizen_profile).length > 0) {
+
+      // Notify parent app if profile data is updated from chat
+      if (response.citizen_profile && typeof response.citizen_profile === 'object' && Object.keys(response.citizen_profile).length > 0) {
         onProfileUpdated?.(response.citizen_profile);
       }
 
@@ -452,6 +453,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         sender: 'bot',
         lang: currentLanguage,
         text: response.message,
+        blocks: response.blocks,
       };
 
       setMessages((prev) => [...prev, botResponse]);
@@ -645,10 +647,63 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
               {msg.text ? (
                 msg.sender === 'bot' ? (
-                  <MarkdownText
-                    text={msg.text}
-                    baseStyle={styles.botText}
-                  />
+                  <>
+                    <MarkdownText
+                      text={msg.text}
+                      baseStyle={styles.botText}
+                    />
+                    {msg.blocks?.map((block, idx) => {
+                      if (block.type === 'profile_confirmation') {
+                        return (
+                          <View key={idx} style={{ marginTop: 12, backgroundColor: '#FFF', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                              <Ionicons name="person-circle-outline" size={20} color="#0EA5E9" />
+                              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0F172A', marginLeft: 6 }}>
+                                {isEn ? 'Profile Update Detected' : 'प्रोफ़ाइल जानकारी मिली'}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
+                              {isEn ? 'Would you like to save these details to your profile?' : 'क्या आप इन विवरणों को अपनी प्रोफ़ाइल में सहेजना चाहेंगे?'}
+                            </Text>
+                            <View style={{ backgroundColor: '#F8FAFC', borderRadius: 6, padding: 8, marginBottom: 12 }}>
+                              {Object.entries(block.data).map(([k, v]) => {
+                                // Filter out empty or null values
+                                if (!v || v === 'null') return null;
+                                return (
+                                  <Text key={k} style={{ fontSize: 12, color: '#334155', marginBottom: 4 }}>
+                                    <Text style={{ fontWeight: 'bold' }}>{k}: </Text>
+                                    {String(v)}
+                                  </Text>
+                                );
+                              })}
+                            </View>
+                            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+                              <TouchableOpacity 
+                                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 4, backgroundColor: '#F1F5F9' }}
+                                onPress={() => handleProcessUserResponse(isEn ? 'No, not right now.' : 'अभी नहीं')}
+                              >
+                                <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '600' }}>
+                                  {isEn ? 'Not Now' : 'अभी नहीं'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity 
+                                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 4, backgroundColor: '#0EA5E9' }}
+                                onPress={() => {
+                                  onProfileUpdated?.(block.data);
+                                  handleProcessUserResponse(isEn ? 'Yes, save details.' : 'हाँ, विवरण सहेजें।');
+                                }}
+                              >
+                                <Text style={{ fontSize: 13, color: '#FFF', fontWeight: '600' }}>
+                                  {isEn ? 'Save Details' : 'सहेजें'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })}
+                  </>
                 ) : (
                   <Text
                     style={[

@@ -64,7 +64,7 @@ export class LiveVoiceClient {
 
     try {
       this.ws = new WebSocket(wsUrl);
-      this.ws.binaryType = 'arraybuffer';
+      (this.ws as any).binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         console.log('[LiveVoice] Connected');

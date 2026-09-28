@@ -16,7 +16,7 @@ import { Ionicons } from './src/utils/icons';
 import Speech from './src/utils/speech';
 import { Colors } from './src/theme/colors';
 import { NavTab, Scheme } from './src/types';
-import { SCHEMES, CATEGORIES } from './src/data/schemesData';
+import { CATEGORIES } from './src/data/schemesData';
 import { Header } from './src/components/Header';
 import { BottomNavBar } from './src/components/BottomNavBar';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -72,6 +72,7 @@ const createCitizenUser = (email: string, name?: string, profileData?: Partial<U
 
   return {
     id: email || 'citizen',
+    email: email,
     name: displayName,
     nameHi: displayName,
     nameEn: displayName,
@@ -91,7 +92,10 @@ const createCitizenUser = (email: string, name?: string, profileData?: Partial<U
 
 export default function App() {
   // 1. App Lifecycle & Navigation State
-  const [showSplash, setShowSplash] = useState<boolean>(false);
+  // isAppReady = false → Splash shown. Set to true only after BOTH:
+  //   a) minimum 4-second branded splash has elapsed
+  //   b) authentication check (AsyncStorage + server verify) is complete
+  const [isAppReady, setIsAppReady] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [loggedInEmail, setLoggedInEmail] = useState<string>('');
   const [hasSelectedLanguage, setHasSelectedLanguage] = useState<boolean>(false);
@@ -119,21 +123,38 @@ export default function App() {
   // 4. Notifications & Modals State
   const [isNotificationVisible, setIsNotificationVisible] = useState<boolean>(false);
   const [returnToNotificationOnBack, setReturnToNotificationOnBack] = useState<boolean>(false);
-  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(['notif-3', 'notif-4']);
+  const [hasNewNotifications, setHasNewNotifications] = useState<boolean>(false);
   const [selectedSchemeForDocs, setSelectedSchemeForDocs] = useState<Scheme | null>(null);
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
 
-  // 5a. Restore session from local cache on app start - Strictly verified with MongoDB backend
-  useEffect(() => {
-    async function restoreSession() {
-      const session = await AuthStore.restore();
-      if (!session) {
-        setIsLoggedIn(false);
-        return;
-      }
+  // 4b. Real Backend Schemes State
+  const [realSchemes, setRealSchemes] = useState<Scheme[]>([]);
 
-      // STRICT CHECK: Verify with MongoDB server that this user actually exists
+  useEffect(() => {
+    if (isLoggedIn) {
+      apiClient.get('/api/schemes?all=true')
+        .then((res) => {
+          if (Array.isArray(res.data)) {
+            setRealSchemes(res.data);
+          } else if (res.data?.schemes) {
+            setRealSchemes(res.data.schemes);
+          }
+        })
+        .catch((err) => console.log('Error fetching backend schemes:', err?.message));
+    }
+  }, [isLoggedIn]);
+
+  // 5a. Splash + Auth: run minimum 4s branded screen AND auth check in parallel.
+  //      Navigate only after BOTH are done (whichever takes longer wins).
+  useEffect(() => {
+    const MIN_SPLASH_MS = 4000;
+
+    async function checkAuth() {
+      const session = await AuthStore.restore();
+      if (!session) return; // not logged in
+
+      // Verify token is still valid on server
       try {
         const res = await apiClient.get('/api/profile');
         if (res.data?.profile) {
@@ -141,18 +162,23 @@ export default function App() {
           setLoggedInEmail(session.user.email);
           setCurrentUser(createCitizenUser(session.user.email, session.user.displayName, p));
           setIsLoggedIn(true);
-          setHasSelectedLanguage(true); // Skip language screen for returning verified users
+          setHasSelectedLanguage(true);
         } else {
-          throw new Error('User profile not found on server');
+          throw new Error('Profile not found');
         }
-      } catch (err: any) {
-        // User not in MongoDB / token invalid -> Force logout and keep on Login/Signup screen!
-        console.log('Session verification failed on server, forcing Login/Signup:', err?.message);
+      } catch {
         await AuthStore.logout();
-        setIsLoggedIn(false);
       }
     }
-    restoreSession();
+
+    const minDelay = new Promise<void>((resolve) =>
+      setTimeout(resolve, MIN_SPLASH_MS)
+    );
+
+    // Both must complete before we show the real screen
+    Promise.all([minDelay, checkAuth()]).then(() => {
+      setIsAppReady(true);
+    });
   }, []);
 
   // 5b. FCM Push Notification Setup
@@ -170,7 +196,9 @@ export default function App() {
     }
     setupFCM();
 
-    const unsubscribe = onForegroundMessage();
+    const unsubscribe = onForegroundMessage(() => {
+      setHasNewNotifications(true);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -193,6 +221,29 @@ export default function App() {
       });
       return newTab;
     });
+
+    // Auto-refresh profile from MongoDB when navigating to profile tab
+    if (newTab === 'profile') {
+      apiClient
+        .get('/api/profile')
+        .then((res) => {
+          if (res.data?.profile) {
+            const p = res.data.profile;
+            setCurrentUser((prev) => ({
+              ...prev,
+              fullName: p.fullName || prev.fullName,
+              name: p.fullName || p.name || prev.name,
+              nameEn: p.fullName || p.name || prev.nameEn,
+              nameHi: p.fullName || p.name || prev.nameHi,
+              profile: {
+                ...prev.profile,
+                ...p,
+              },
+            }));
+          }
+        })
+        .catch((e) => console.log('Profile refresh on tab switch:', e?.message));
+    }
   }, []);
 
   const handleCloseDocsModal = useCallback(() => {
@@ -287,29 +338,29 @@ export default function App() {
 
   // Dynamically calculate scheme eligibility strictly based on citizen's actual profile details
   const dynamicSchemes = useMemo(() => {
-    const p = activeDemoUser.profile;
-    const hasOcc = Boolean(p?.occupation && p.occupation.trim());
-    const hasIncome = Boolean(p?.annualIncome && p.annualIncome.trim());
+    const p = activeDemoUser?.profile;
+    const hasOcc = Boolean(p?.occupation && String(p.occupation).trim());
+    const hasIncome = Boolean(p?.annualIncome !== undefined && p?.annualIncome !== null && String(p.annualIncome).trim());
     const hasAge = p?.age !== null && p?.age !== undefined && String(p.age).trim() !== '';
-    const hasExplicit = Boolean(activeDemoUser.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
+    const hasExplicit = Boolean(activeDemoUser?.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
     const isProfileProper = hasOcc || hasIncome || hasAge || hasExplicit;
 
     // Strict real-world rule: Incomplete / blank profile -> ZERO eligibility!
     if (!isProfileProper) {
-      return SCHEMES.map((scheme) => ({
+      return realSchemes.map((scheme) => ({
         ...scheme,
         isEligible: false,
         matchPercentage: 0,
       }));
     }
 
-    const eligibleIds = activeDemoUser.eligibleSchemeIds || [];
-    return SCHEMES.map((scheme) => ({
+    const eligibleIds = Array.isArray(activeDemoUser?.eligibleSchemeIds) ? activeDemoUser.eligibleSchemeIds : [];
+    return realSchemes.map((scheme) => ({
       ...scheme,
       isEligible: eligibleIds.includes(scheme.id),
       matchPercentage: eligibleIds.includes(scheme.id) ? 100 : 0,
     }));
-  }, [activeDemoUser]);
+  }, [activeDemoUser, realSchemes]);
 
   const eligibleCount = useMemo(() => {
     return dynamicSchemes.filter((s) => s.isEligible).length;
@@ -352,17 +403,19 @@ export default function App() {
 
   const statusBarHeight = RNStatusBar.currentHeight || 28;
 
-  // 1. Splash Screen Phase
-  if (showSplash) {
+  // ─── Splash Phase ───────────────────────────────────────────────────────────
+  // Shown until BOTH the 4-second minimum AND auth check complete.
+  // Dark branded background — never a white flash.
+  if (!isAppReady) {
     return (
       <View style={{ flex: 1, backgroundColor: '#0A2540' }}>
         <RNStatusBar barStyle="light-content" backgroundColor="#0A2540" translucent={true} />
-        <SplashScreen onFinish={() => setShowSplash(false)} />
+        <SplashScreen />
       </View>
     );
   }
 
-  // 2. Login Phase
+  // ─── Login Phase ─────────────────────────────────────────────────────────────
   if (!isLoggedIn) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -459,10 +512,6 @@ export default function App() {
             setReturnToNotificationOnBack(false);
           }}
           currentLanguage={currentLanguage}
-          readNotificationIds={readNotificationIds}
-          onMarkNotificationAsRead={(id) => {
-            setReadNotificationIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-          }}
           onSelectScheme={(scheme) => {
             setReturnToNotificationOnBack(true);
             setSelectedSchemeForDocs(scheme);
@@ -478,10 +527,10 @@ export default function App() {
               onBackPress={handleGoBack}
               activeDemoUser={activeDemoUser}
               onOpenUserSwitcher={() => navigateToTab('profile')}
-              onOpenNotifications={() => setIsNotificationVisible(true)}
+              onOpenNotifications={() => { setIsNotificationVisible(true); setHasNewNotifications(false); }}
               onNavigateToProfile={() => navigateToTab('profile')}
               eligibleCount={eligibleCount}
-              unreadCount={Math.max(0, 4 - readNotificationIds.length)}
+              unreadCount={hasNewNotifications ? 1 : 0}
               currentLanguage={currentLanguage}
               themeLight={activeHomeScheme?.themeLight}
               themeColor={activeHomeScheme?.themeColor}
@@ -501,9 +550,9 @@ export default function App() {
                   activeUser={activeDemoUser}
                   onOpenProfile={() => navigateToTab('profile')}
                   onOpenUserSwitcher={() => navigateToTab('profile')}
-                  onOpenNotifications={() => setIsNotificationVisible(true)}
+                  onOpenNotifications={() => { setIsNotificationVisible(true); setHasNewNotifications(false); }}
                   eligibleCount={eligibleCount}
-                  unreadCount={Math.max(0, 4 - readNotificationIds.length)}
+                  unreadCount={hasNewNotifications ? 1 : 0}
                   currentLanguage={currentLanguage}
                   onActiveSchemeChange={setActiveHomeScheme}
                   registerBackHandler={(h) => {
@@ -542,9 +591,10 @@ export default function App() {
                     if (!updatedProfile || typeof updatedProfile !== 'object') return;
                     setCurrentUser((prev) => ({
                       ...prev,
-                      name: updatedProfile.name || prev.name,
-                      nameEn: updatedProfile.name || prev.nameEn,
-                      nameHi: updatedProfile.name || prev.nameHi,
+                      fullName: updatedProfile.fullName || prev.fullName,
+                      name: updatedProfile.fullName || updatedProfile.name || prev.name,
+                      nameEn: updatedProfile.fullName || updatedProfile.name || prev.nameEn,
+                      nameHi: updatedProfile.fullName || updatedProfile.name || prev.nameHi,
                       eligibleSchemeIds: updatedProfile.eligibleSchemeIds || prev.eligibleSchemeIds,
                       profile: {
                         ...prev.profile,

@@ -47,4 +47,23 @@ export const authApi = {
     });
     return res.data;
   },
+
+  /**
+   * Log in via Firebase Auth ID Token (Google, etc).
+   * mode: 'login' → only sign in existing users
+   * mode: 'signup' → register new user first, then sign in
+   */
+  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' = 'login'): Promise<AuthResponse> => {
+    let fcm_token: string | null = null;
+    try {
+      fcm_token = await getFCMToken();
+    } catch (_) {}
+
+    const res = await apiClient.post('/api/auth/firebase', {
+      id_token,
+      fcm_token,
+      mode,
+    });
+    return res.data;
+  },
 };

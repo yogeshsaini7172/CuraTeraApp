@@ -17,6 +17,13 @@ import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { SupportedLanguage } from '../i18n/translations';
 import AuthStore from '../store/AuthStore';
+import { getAuth, GoogleAuthProvider, signInWithCredential, getIdToken } from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  // IMPORTANT: You must get this from your Firebase Console (Authentication > Sign-in method > Google > Web SDK configuration)
+  webClientId: '186943676690-s4tdf4hvfecoq2ldt1j24vei736uof3u.apps.googleusercontent.com',
+});
 
 interface LoginScreenProps {
   onLoginSuccess: (userName: string, email: string) => void;
@@ -37,6 +44,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Stores pending Google idToken when user needs to take action (404/409)
+  const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
+  // 'not_found' = login but no account | 'already_exists' = signup but account exists
+  const [googleActionNeeded, setGoogleActionNeeded] = useState<'not_found' | 'already_exists' | null>(null);
 
   const lastBackPressRef = useRef<number>(0);
 
@@ -47,6 +58,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       if (authMode === 'signup') {
         setAuthMode('login');
         setErrorMessage(null);
+        setGoogleActionNeeded(null);
+        setPendingGoogleToken(null);
         return true;
       }
 
@@ -109,13 +122,75 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const handleGoogleSignIn = () => {
-    setErrorMessage(
-      isEn
-        ? 'Google Sign-In will be available soon. Please use Email & Password.'
-        : 'Google साइन-इन जल्द ही उपलब्ध होगा। कृपया ईमेल और पासवर्ड का उपयोग करें।'
-    );
+  const handleGoogleSignIn = async () => {
+    setErrorMessage(null);
+    setGoogleActionNeeded(null);
+    setPendingGoogleToken(null);
+    setIsLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // Sign out first so account chooser always appears (fresh pick every time)
+      await GoogleSignin.signOut();
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = signInResult.data?.idToken;
+      if (!idToken) throw new Error('No ID token found');
+
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const firebaseAuth = getAuth();
+      await signInWithCredential(firebaseAuth, googleCredential);
+
+      const currentUser = firebaseAuth.currentUser;
+      if (currentUser) {
+        const firebaseIdToken = await getIdToken(currentUser);
+        const session = await AuthStore.firebaseLogin(firebaseIdToken, authMode);
+        onLoginSuccess(session.user.displayName, session.user.email);
+      }
+    } catch (error: any) {
+      console.log('Google Sign-In Error:', error);
+      if (error.code === 'SIGN_IN_CANCELLED' || error.code === 'IN_PROGRESS') {
+        // silent — user cancelled
+      } else if (error.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
+        setErrorMessage(isEn ? 'Play Services not available.' : 'Play Services उपलब्ध नहीं हैं।');
+      } else if (error?.response?.status === 404) {
+        // Login mode: no account found — store Firebase token and show action buttons
+        const cu = getAuth().currentUser;
+        if (cu) setPendingGoogleToken(await getIdToken(cu));
+        setGoogleActionNeeded('not_found');
+      } else if (error?.response?.status === 409) {
+        // Signup mode: account already exists — show switch-to-login option
+        const cu = getAuth().currentUser;
+        if (cu) setPendingGoogleToken(await getIdToken(cu));
+        setGoogleActionNeeded('already_exists');
+      } else {
+        setErrorMessage(
+          error?.response?.data?.message ||
+          (isEn ? 'Google Sign-In failed. Please try again.' : 'Google साइन-इन विफल रहा।')
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Called when user taps "Sign up with Google" after getting 404 on login screen
+  const handleGoogleSignupFromLogin = async () => {
+    if (!pendingGoogleToken) return;
+    setIsLoading(true);
+    setGoogleActionNeeded(null);
+    try {
+      const session = await AuthStore.firebaseLogin(pendingGoogleToken, 'signup');
+      onLoginSuccess(session.user.displayName, session.user.email);
+    } catch (err: any) {
+      setErrorMessage(
+        err?.response?.data?.message ||
+        (isEn ? 'Registration failed. Try again.' : 'रजिस्ट्रेशन विफल रहा।')
+      );
+    } finally {
+      setIsLoading(false);
+      setPendingGoogleToken(null);
+    }
+  };
+
 
   return (
     <KeyboardAvoidingView
@@ -202,6 +277,74 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={16} color={Colors.orange.primary} />
               <Text style={styles.errorBannerText}>{errorMessage}</Text>
+            </View>
+          )}
+
+          {/* Smart Banner: Login → No Account Found */}
+          {googleActionNeeded === 'not_found' && (
+            <View style={styles.googleActionBanner}>
+              <View style={styles.googleActionHeader}>
+                <Ionicons name="alert-circle-outline" size={17} color="#92400E" />
+                <Text style={styles.googleActionTitle}>
+                  {isEn ? 'No account found with this Google ID.' : 'इस Google अकाउंट से कोई खाता नहीं मिला।'}
+                </Text>
+              </View>
+              <Text style={styles.googleActionSub}>
+                {isEn ? 'What would you like to do?' : 'आप क्या करना चाहते हैं?'}
+              </Text>
+              <View style={styles.googleActionButtons}>
+                <TouchableOpacity
+                  style={styles.googleActionBtnPrimary}
+                  onPress={handleGoogleSignupFromLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="person-add-outline" size={13} color="#fff" />
+                  <Text style={styles.googleActionBtnPrimaryText}>
+                    {isEn ? 'Sign up with Google' : 'Google से Register करें'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.googleActionBtnSecondary}
+                  onPress={() => {
+                    setGoogleActionNeeded(null);
+                    setPendingGoogleToken(null);
+                    setAuthMode('signup');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="create-outline" size={13} color="#92400E" />
+                  <Text style={styles.googleActionBtnSecondaryText}>
+                    {isEn ? 'Sign up Manually' : 'Email से Register करें'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Smart Banner: Signup → Already Registered */}
+          {googleActionNeeded === 'already_exists' && (
+            <View style={[styles.googleActionBanner, { borderColor: '#6EE7B7', backgroundColor: '#ECFDF5' }]}>
+              <View style={styles.googleActionHeader}>
+                <Ionicons name="checkmark-circle-outline" size={17} color="#065F46" />
+                <Text style={[styles.googleActionTitle, { color: '#065F46' }]}>
+                  {isEn ? 'Already registered with this Google account.' : 'यह Google अकाउंट पहले से रजिस्टर है।'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.googleActionBtnPrimary, { backgroundColor: '#059669', marginTop: 10 }]}
+                onPress={() => {
+                  setGoogleActionNeeded(null);
+                  setPendingGoogleToken(null);
+                  setAuthMode('login');
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="log-in-outline" size={13} color="#fff" />
+                <Text style={styles.googleActionBtnPrimaryText}>
+                  {isEn ? 'Go to Sign In' : 'Sign In पर जाएं'}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -317,7 +460,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               style={{ width: 18, height: 18 }}
             />
             <Text style={styles.googleAuthButtonText}>
-              {isEn ? 'Sign in with Google' : 'Google के साथ आगे बढ़ें'}
+              {isEn ? 'Continue with Google' : 'Google के साथ आगे बढ़ें'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -325,9 +468,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         {/* 3. Secure Footer */}
         <View style={styles.trustFooter}>
           <View style={styles.secureBadge}>
-            <Ionicons name="shield-checkmark" size={14} color="#16A34A" />
+            <Ionicons name="shield-checkmark" size={14} color="#05326eff" />
             <Text style={styles.secureBadgeText}>
-              Secured by Avensoft • Encryption
+              Powered by Avensoft
             </Text>
           </View>
         </View>
@@ -577,5 +720,71 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#16A34A',
     fontWeight: '700',
+  },
+
+  // Smart Google Action Banner styles
+  googleActionBanner: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  googleActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 4,
+  },
+  googleActionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#92400E',
+    flex: 1,
+  },
+  googleActionSub: {
+    fontSize: 12,
+    color: '#B45309',
+    marginBottom: 10,
+    marginLeft: 24,
+  },
+  googleActionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  googleActionBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D97706',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    gap: 5,
+  },
+  googleActionBtnPrimaryText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  googleActionBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    gap: 5,
+  },
+  googleActionBtnSecondaryText: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

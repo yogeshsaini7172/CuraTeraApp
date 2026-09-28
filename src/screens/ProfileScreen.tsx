@@ -22,6 +22,8 @@ import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker
 import { DemoUser } from '../data/demoUsers';
 import { UserProfile } from '../types';
 import { SupportedLanguage } from '../i18n/translations';
+import { PROFILE_ATTRIBUTES, CATEGORY_LABELS } from '../data/profileAttributes';
+import apiClient from '../api/client';
 
 interface ProfileScreenProps {
   onStartReProfiling?: () => void;
@@ -107,9 +109,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // User details — safely handle completely blank profiles
   const profile = activeDemoUser?.profile || ({} as Partial<UserProfile>);
 
-  const displayName = isEn
-    ? (activeDemoUser?.nameEn || activeDemoUser?.name || '')
-    : (activeDemoUser?.nameHi || activeDemoUser?.name || '');
+  // Strictly separated Full Name: Never use username as full name
+  const userFullName =
+    profile.fullName ||
+    (profile.name && profile.name !== activeDemoUser.username && !profile.name.includes('@')
+      ? profile.name
+      : '') ||
+    activeDemoUser.fullName ||
+    '';
+
+  const displayName = userFullName || activeDemoUser?.name || '';
 
   const displayState = isEn
     ? (profile.stateEn || profile.state || '')
@@ -120,20 +129,24 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     : (profile.occupationHi || profile.occupation || '');
 
   const displayIncome = isEn
-    ? (profile.annualIncomeEn || profile.annualIncome || '')
-    : (profile.annualIncomeHi || profile.annualIncome || '');
+    ? (profile.annualIncomeEn || profile.annualIncome || (profile as any).annual_family_income || '')
+    : (profile.annualIncomeHi || profile.annualIncome || (profile as any).annual_family_income || '');
 
   const displayHouseType = isEn
     ? (profile.houseTypeEn || profile.houseType || '')
     : (profile.houseTypeHi || profile.houseType || '');
 
   const displayCategory = isEn
-    ? (profile.categoryEn || profile.category || '')
-    : (profile.categoryHi || profile.category || '');
+    ? (profile.categoryEn || profile.category || (profile as any).social_category || '')
+    : (profile.categoryHi || profile.category || (profile as any).social_category || '');
 
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-  const [editName, setEditName] = useState(displayName);
+  const [isAddingMoreDetails, setIsAddingMoreDetails] = useState(false);
+  const [activeAddDetailKey, setActiveAddDetailKey] = useState<string | null>(null);
+  const [addDetailValue, setAddDetailValue] = useState('');
+  const [editDynamicFields, setEditDynamicFields] = useState<Record<string, string>>({});
+  const [editName, setEditName] = useState(userFullName);
   const [editState, setEditState] = useState(displayState);
   const [editOccupation, setEditOccupation] = useState(displayOccupation);
   const [editIncome, setEditIncome] = useState(displayIncome);
@@ -167,6 +180,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setShowPrivacyModal(false);
       return true;
     }
+    if (activeAddDetailKey) {
+      setActiveAddDetailKey(null);
+      setAddDetailValue('');
+      return true;
+    }
+    if (isAddingMoreDetails) {
+      setIsAddingMoreDetails(false);
+      return true;
+    }
     if (activeDropdown) {
       setActiveDropdown(null);
       return true;
@@ -186,6 +208,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     showLanguageModal,
     showPasswordModal,
     showPrivacyModal,
+    activeAddDetailKey,
+    isAddingMoreDetails,
     activeDropdown,
     isEditingProfile,
     currentView,
@@ -206,16 +230,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     setShowPhotoPickerModal(true);
   };
 
-  const handleApplyPhoto = (uri: string) => {
-    // Show Updating toast with App Logo + small text
+  const handleApplyPhoto = async (uri: string) => {
     setUploadToastStatus('updating');
-    setTimeout(() => {
-      onUpdateAvatar?.({ uri });
-      setUploadToastStatus('success');
-      setTimeout(() => {
-        setUploadToastStatus('idle');
-      }, 2500);
-    }, 800);
+    try {
+      const filename = uri.split('/').pop() || 'profile.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : `image`;
+
+      const formData = new FormData();
+      formData.append('image', {
+        uri,
+        name: filename,
+        type
+      } as any);
+
+      const res = await apiClient.post('/api/profile/upload-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (res.data && res.data.imageUrl) {
+        onUpdateAvatar?.({ uri: res.data.imageUrl });
+        setUploadToastStatus('success');
+      } else {
+        throw new Error('No imageUrl returned');
+      }
+    } catch (err) {
+      console.log('Upload error:', err);
+      Alert.alert(isEn ? 'Error' : 'त्रुटि', isEn ? 'Failed to upload image' : 'फ़ोटो अपलोड विफल');
+      setUploadToastStatus('idle');
+    } finally {
+      setTimeout(() => setUploadToastStatus('idle'), 2500);
+    }
   };
 
   const handleLaunchCamera = async () => {
@@ -297,42 +344,110 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   // Open Edit Form
   const handleStartEdit = () => {
-    setEditName(displayName);
+    setEditName(userFullName);
     setEditState(displayState);
     setEditOccupation(displayOccupation);
     setEditIncome(displayIncome);
     setEditHouseType(displayHouseType);
     setEditCategory(displayCategory);
+
+    // Copy any dynamic attributes already filled
+    const dyn: Record<string, string> = {};
+    PROFILE_ATTRIBUTES.forEach((attr) => {
+      let val = profile[attr.key];
+      if ((val === undefined || val === null || String(val).trim() === '') && attr.key === 'education') {
+        val = (profile as any).education_level;
+      }
+      if (
+        val !== undefined &&
+        val !== null &&
+        String(val).trim() !== ''
+      ) {
+        dyn[attr.key] = String(val);
+      }
+    });
+    setEditDynamicFields(dyn);
+
     setActiveDropdown(null);
     setIsEditingProfile(true);
   };
 
   // Save Profile Details
   const handleSaveProfile = () => {
-    onUpdateProfile?.(
-      {
-        state: editState,
-        stateHi: editState,
-        stateEn: editState,
-        occupation: editOccupation,
-        occupationHi: editOccupation,
-        occupationEn: editOccupation,
-        annualIncome: editIncome,
-        annualIncomeHi: editIncome,
-        annualIncomeEn: editIncome,
-        houseType: editHouseType,
-        houseTypeHi: editHouseType,
-        houseTypeEn: editHouseType,
-        category: editCategory,
-        categoryHi: editCategory,
-        categoryEn: editCategory,
-      },
-      editName
-    );
+    const updatedPayload: Partial<UserProfile> = {
+      ...editDynamicFields,
+      fullName: editName,
+      name: editName,
+    };
+    if (editState) {
+      updatedPayload.state = editState;
+      updatedPayload.stateHi = editState;
+      updatedPayload.stateEn = editState;
+    }
+    if (editOccupation) {
+      updatedPayload.occupation = editOccupation;
+      updatedPayload.occupationHi = editOccupation;
+      updatedPayload.occupationEn = editOccupation;
+    }
+    if (editIncome) {
+      updatedPayload.annualIncome = editIncome;
+      updatedPayload.annualIncomeHi = editIncome;
+      updatedPayload.annualIncomeEn = editIncome;
+    }
+    if (editHouseType) {
+      updatedPayload.houseType = editHouseType;
+      updatedPayload.houseTypeHi = editHouseType;
+      updatedPayload.houseTypeEn = editHouseType;
+    }
+    if (editCategory) {
+      updatedPayload.category = editCategory;
+      updatedPayload.categoryHi = editCategory;
+      updatedPayload.categoryEn = editCategory;
+    }
+
+    onUpdateProfile?.(updatedPayload, editName);
     setIsEditingProfile(false);
     Alert.alert(
       isEn ? 'Success' : 'सफलता',
       isEn ? 'Profile details updated successfully.' : 'प्रोफ़ाइल विवरण सफलतापूर्वक अपडेट हो गया।'
+    );
+  };
+
+  // Save Single Attribute from Add More Details Modal
+  const handleSaveSingleAttribute = (key: string, value: string) => {
+    const trimmedVal = value.trim();
+    if (!trimmedVal) {
+      Alert.alert(
+        isEn ? 'Required' : 'आवश्यक',
+        isEn ? 'Please enter or select a value.' : 'कृपया मान दर्ज करें या चुनें।'
+      );
+      return;
+    }
+
+    const payload: Partial<UserProfile> = {
+      [key]: trimmedVal,
+    };
+
+    // If options exist, map bilingual values
+    const attr = PROFILE_ATTRIBUTES.find((a) => a.key === key);
+    if (attr && attr.options) {
+      const match = attr.options.find(
+        (o) => o.en.toLowerCase() === trimmedVal.toLowerCase() || o.hi === trimmedVal
+      );
+      if (match) {
+        payload[key + 'En'] = match.en;
+        payload[key + 'Hi'] = match.hi;
+      }
+    }
+
+    onUpdateProfile?.(payload);
+    setIsAddingMoreDetails(false);
+    setActiveAddDetailKey(null);
+    setAddDetailValue('');
+
+    Alert.alert(
+      isEn ? 'Saved' : 'सहेजा गया',
+      isEn ? 'Profile detail saved successfully.' : 'प्रोफ़ाइल विवरण सफलतापूर्वक सहेजा गया।'
     );
   };
 
@@ -355,90 +470,142 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     );
   };
 
-  // Simple Profile Details Card Renderer
-  const renderProfileDetailsCard = () => (
-    <View style={styles.profileDetailsCard}>
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardHeaderTitleBox}>
-          <Ionicons name="id-card-outline" size={19} color="#0A2540" />
-          <Text style={styles.cardHeaderTitle}>
-            {isEn ? 'Profile Details' : 'प्रोफ़ाइल विवरण'}
-          </Text>
+  // Compact Dynamic Profile Details Card Renderer
+  // Compact Dynamic Profile Details Card Renderer (Only shows specified attributes)
+  const renderProfileDetailsCard = () => {
+    const coreKeys = ['state', 'occupation', 'annualIncome', 'houseType', 'category'];
+    const extraFilledAttributes = PROFILE_ATTRIBUTES.filter((attr) => {
+      if (coreKeys.includes(attr.key)) return false;
+      const v = profile[attr.key] || (attr.key === 'education' ? (profile as any).education_level : undefined);
+      return v !== undefined && v !== null && String(v).trim() !== '';
+    });
+
+    // Collect all attributes that are actually specified by the user
+    const populatedRows: { label: string; value: string }[] = [];
+
+    if (userFullName && String(userFullName).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'Full Name' : 'पूरा नाम',
+        value: String(userFullName).trim(),
+      });
+    }
+
+    if (displayState && String(displayState).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'State' : 'राज्य',
+        value: String(displayState).trim(),
+      });
+    }
+
+    if (displayOccupation && String(displayOccupation).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'Occupation' : 'व्यवसाय',
+        value: String(displayOccupation).trim(),
+      });
+    }
+
+    if (displayIncome && String(displayIncome).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'Annual Income' : 'वार्षिक आय',
+        value: String(displayIncome).trim(),
+      });
+    }
+
+    if (displayHouseType && String(displayHouseType).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'House Type' : 'मकान का प्रकार',
+        value: String(displayHouseType).trim(),
+      });
+    }
+
+    if (displayCategory && String(displayCategory).trim() !== '') {
+      populatedRows.push({
+        label: isEn ? 'Category' : 'सामाजिक श्रेणी',
+        value: String(displayCategory).trim(),
+      });
+    }
+
+    // Dynamic additional attributes
+    extraFilledAttributes.forEach((attr) => {
+      let val = String(profile[attr.key] || '').trim();
+      if (!val && attr.key === 'education') {
+        val = String((profile as any).education_level || '').trim();
+      }
+      if (val) {
+        populatedRows.push({
+          label: isEn ? attr.labelEn : attr.labelHi,
+          value: val,
+        });
+      }
+    });
+
+    return (
+      <View style={styles.profileDetailsCard}>
+        {/* Card Header with Edit Icon */}
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderTitleBox}>
+            <Ionicons name="id-card-outline" size={17} color="#0A2540" />
+            <Text style={styles.cardHeaderTitle}>
+              {isEn ? 'Profile Details' : 'प्रोफ़ाइल विवरण'}
+            </Text>
+          </View>
+
+          {populatedRows.length > 0 && (
+            <TouchableOpacity
+              style={styles.cardEditPill}
+              onPress={handleStartEdit}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="create-outline" size={13} color="#0A2540" />
+              <Text style={styles.cardEditPillText}>
+                {isEn ? 'Edit' : 'एडिट करें'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <TouchableOpacity
-          style={styles.cardEditPill}
-          onPress={handleStartEdit}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="create-outline" size={14} color="#0A2540" />
-          <Text style={styles.cardEditPillText}>
-            {isEn ? 'Edit' : 'एडिट करें'}
-          </Text>
-        </TouchableOpacity>
+        {/* Compact Details Rows (Only specified attributes) */}
+        <View style={styles.detailsBody}>
+          {populatedRows.length === 0 ? (
+            <View style={styles.noDetailsBox}>
+              <Ionicons name="information-circle-outline" size={18} color="#94A3B8" style={{ marginRight: 6 }} />
+              <Text style={styles.noDetailsText}>
+                {isEn ? 'No details added yet' : 'कोई विवरण अभी तक नहीं जोड़ा गया'}
+              </Text>
+            </View>
+          ) : (
+            populatedRows.map((row, index) => (
+              <View key={index}>
+                {index > 0 && <View style={styles.rowDividerInset} />}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{row.label}</Text>
+                  <Text style={styles.detailValue}>{row.value}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Bottom Pill/Capsule Button for '+ Add More Details' */}
+        <View style={styles.addMoreBtnWrapper}>
+          <TouchableOpacity
+            style={styles.addMoreCapsuleBtn}
+            onPress={() => {
+              setActiveAddDetailKey(null);
+              setAddDetailValue('');
+              setIsAddingMoreDetails(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={16} color="#0A2540" />
+            <Text style={styles.addMoreCapsuleBtnText}>
+              {isEn ? '+ Add More Details' : '+ अन्य विवरण जोड़ें'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <View style={styles.detailsBody}>
-        {/* Full Name */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'Full Name' : 'पूरा नाम'}</Text>
-          <Text style={[styles.detailValue, !displayName && styles.detailValueEmpty]}>
-            {displayName || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-
-        <View style={styles.rowDividerInset} />
-
-        {/* State */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'State' : 'राज्य'}</Text>
-          <Text style={[styles.detailValue, !displayState && styles.detailValueEmpty]}>
-            {displayState || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-
-        <View style={styles.rowDividerInset} />
-
-        {/* Occupation */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'Occupation' : 'व्यवसाय'}</Text>
-          <Text style={[styles.detailValue, !displayOccupation && styles.detailValueEmpty]}>
-            {displayOccupation || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-
-        <View style={styles.rowDividerInset} />
-
-        {/* Annual Income */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'Annual Income' : 'वार्षिक आय'}</Text>
-          <Text style={[styles.detailValue, !displayIncome && styles.detailValueEmpty]}>
-            {displayIncome || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-
-        <View style={styles.rowDividerInset} />
-
-        {/* House Type */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'House Type' : 'मकान का प्रकार'}</Text>
-          <Text style={[styles.detailValue, !displayHouseType && styles.detailValueEmpty]}>
-            {displayHouseType || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-
-        <View style={styles.rowDividerInset} />
-
-        {/* Social Category */}
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>{isEn ? 'Category' : 'सामाजिक श्रेणी'}</Text>
-          <Text style={[styles.detailValue, !displayCategory && styles.detailValueEmpty]}>
-            {displayCategory || (isEn ? 'Not specified' : 'दर्ज नहीं')}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   // ==========================================
   // VIEW 2: PROFILE DETAIL (Sub-screen fallback)
@@ -572,15 +739,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     <>
       {/* 1. CuraTera Signature Deep Navy Banner */}
       <View style={styles.heroBanner}>
-        <View style={styles.heroContent}>
+        <View style={[styles.heroContent, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' }]}>
           {/* Circular Avatar with White Border & Camera Badge */}
-          <View style={styles.avatarContainer}>
+          <View style={[styles.avatarContainer, { marginRight: 15 }]}>
             <TouchableOpacity
               onPress={() => setShowFullImageViewer(true)}
               activeOpacity={0.85}
             >
-              {activeDemoUser.image ? (
-                <Image source={activeDemoUser.image} style={styles.avatarImage} />
+              {activeDemoUser.image || profile.profileImage || (profile as any).imageUrl ? (
+                <Image source={activeDemoUser.image || {uri: (profile as any).imageUrl || profile.profileImage}} style={styles.avatarImage} />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Ionicons name="person" size={38} color="#FFFFFF" />
@@ -588,7 +755,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               )}
             </TouchableOpacity>
 
-            {/* Camera badge for changing photo */}
             <TouchableOpacity
               style={styles.cameraBadge}
               onPress={handleOpenPhotoPicker}
@@ -599,14 +765,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* User Name and Occupation (Verified Citizen removed as requested) */}
           <View style={styles.heroTextContainer}>
-            <Text style={styles.heroUserName} numberOfLines={1}>
-              {displayName || (isEn ? 'Citizen' : 'नागरिक')}
+            <Text style={[styles.heroUserName, { textAlign: 'left', marginBottom: 2 }]} numberOfLines={1}>
+              {userFullName || (isEn ? 'Name not set' : 'नाम दर्ज नहीं')}
             </Text>
-            <Text style={[styles.userOccupationText, !displayOccupation && { fontStyle: 'italic', opacity: 0.8 }]} numberOfLines={1}>
-              {displayOccupation || (isEn ? 'Profile Incomplete • Tap Edit to fill' : 'प्रोफ़ाइल अधूरी • भरने के लिए एडिट दबाएं')}
+            <Text style={[styles.userOccupationText, { textAlign: 'left', opacity: 0.9, marginBottom: 2 }]} numberOfLines={1}>
+              {activeDemoUser.email || profile.email || 'user@example.com'}
             </Text>
+            {!!displayOccupation && (
+              <Text style={[styles.userOccupationText, { textAlign: 'left', opacity: 0.75, fontSize: 13 }]} numberOfLines={1}>
+                {displayOccupation}
+              </Text>
+            )}
           </View>
         </View>
       </View>
@@ -826,372 +996,791 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   // ==========================================
   // MODAL 2: EDIT PROFILE MODAL
   // ==========================================
-  const renderEditProfileModal = () => (
-    <Modal
-      visible={isEditingProfile}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setIsEditingProfile(false)}
-    >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>
-            {isEn ? 'Edit Profile Details' : 'प्रोफ़ाइल विवरण संपादित करें'}
-          </Text>
+  // ==========================================
+  // MODAL 2: EDIT PROFILE MODAL (Only shows already-provided details)
+  // ==========================================
+  const renderEditProfileModal = () => {
+    const hasFullName = !!userFullName;
+    const hasState = !!displayState;
+    const hasOccupation = !!displayOccupation;
+    const hasIncome = !!displayIncome;
+    const hasHouseType = !!displayHouseType;
+    const hasCategory = !!displayCategory;
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-            style={{ maxHeight: 420, marginBottom: 14 }}
-          >
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'Full Name' : 'पूरा नाम'}</Text>
-              <TextInput
-                style={styles.textInput}
-                value={editName}
-                onChangeText={setEditName}
-                placeholder={isEn ? 'Enter Name' : 'नाम दर्ज करें'}
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
+    const dynamicFilledAttrs = PROFILE_ATTRIBUTES.filter((attr) => {
+      if (['state', 'occupation', 'annualIncome', 'houseType', 'category'].includes(attr.key)) return false;
+      const val = profile[attr.key] || (attr.key === 'education' ? (profile as any).education_level : undefined);
+      return val !== undefined && val !== null && String(val).trim() !== '';
+    });
 
-            {/* 1. State Dropdown */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'State' : 'राज्य'}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownButton,
-                  activeDropdown === 'state' && styles.dropdownButtonActive,
-                ]}
-                onPress={() => setActiveDropdown(activeDropdown === 'state' ? null : 'state')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.dropdownValueText,
-                    !editState && styles.dropdownPlaceholderText,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {editState || (isEn ? 'Select State' : 'राज्य चुनें')}
-                </Text>
-                <Ionicons
-                  name={activeDropdown === 'state' ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={activeDropdown === 'state' ? '#0A2540' : '#64748B'}
-                />
-              </TouchableOpacity>
+    const hasAnyDetails =
+      hasFullName ||
+      hasState ||
+      hasOccupation ||
+      hasIncome ||
+      hasHouseType ||
+      hasCategory ||
+      dynamicFilledAttrs.length > 0;
 
-              {activeDropdown === 'state' && (
-                <View style={styles.dropdownMenu}>
-                  <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }} showsVerticalScrollIndicator={true}>
-                    {STATE_OPTIONS.map((item, idx) => {
-                      const val = isEn ? item.en : item.hi;
-                      const isSelected = editState === val || editState.includes(item.en) || editState.includes(item.hi.split(' ')[0]);
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[
-                            styles.dropdownMenuItem,
-                            isSelected && styles.dropdownMenuItemActive,
-                            idx === STATE_OPTIONS.length - 1 && { borderBottomWidth: 0 },
-                          ]}
-                          onPress={() => {
-                            setEditState(val);
-                            setActiveDropdown(null);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownMenuItemText,
-                              isSelected && styles.dropdownMenuItemTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {val}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+    return (
+      <Modal
+        visible={isEditingProfile}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsEditingProfile(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {isEn ? 'Edit Profile Details' : 'प्रोफ़ाइल विवरण संपादित करें'}
+            </Text>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+              style={{ maxHeight: 420, marginBottom: 14 }}
+            >
+              {!hasAnyDetails ? (
+                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                  <Ionicons name="information-circle-outline" size={32} color="#64748B" />
+                  <Text
+                    style={{
+                      fontSize: 13.5,
+                      color: '#64748B',
+                      textAlign: 'center',
+                      marginTop: 8,
+                      paddingHorizontal: 20,
+                      lineHeight: 20,
+                    }}
+                  >
+                    {isEn
+                      ? 'No details have been added yet. Use "+ Add More Details" on your profile card to add your information.'
+                      : 'अभी तक कोई विवरण नहीं जोड़ा गया है। प्रोफ़ाइल कार्ड पर "+ अन्य विवरण जोड़ें" बटन का उपयोग करके विवरण जोड़ें।'}
+                  </Text>
                 </View>
-              )}
-            </View>
+              ) : (
+                <>
+                  {/* Full Name - only if already provided */}
+                  {hasFullName && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{isEn ? 'Full Name' : 'पूरा नाम'}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editName}
+                        onChangeText={setEditName}
+                        placeholder={isEn ? 'Enter Name' : 'नाम दर्ज करें'}
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  )}
 
-            {/* 2. Occupation Dropdown */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'Occupation' : 'व्यवसाय'}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownButton,
-                  activeDropdown === 'occupation' && styles.dropdownButtonActive,
-                ]}
-                onPress={() => setActiveDropdown(activeDropdown === 'occupation' ? null : 'occupation')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.dropdownValueText,
-                    !editOccupation && styles.dropdownPlaceholderText,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {editOccupation || (isEn ? 'Select Occupation' : 'व्यवसाय चुनें')}
-                </Text>
-                <Ionicons
-                  name={activeDropdown === 'occupation' ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={activeDropdown === 'occupation' ? '#0A2540' : '#64748B'}
-                />
-              </TouchableOpacity>
-
-              {activeDropdown === 'occupation' && (
-                <View style={styles.dropdownMenu}>
-                  <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }} showsVerticalScrollIndicator={true}>
-                    {OCCUPATION_OPTIONS.map((item, idx) => {
-                      const val = isEn ? item.en : item.hi;
-                      const isSelected = editOccupation === val || editOccupation.includes(item.en) || editOccupation.includes(item.hi.split(' ')[0]);
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[
-                            styles.dropdownMenuItem,
-                            isSelected && styles.dropdownMenuItemActive,
-                            idx === OCCUPATION_OPTIONS.length - 1 && { borderBottomWidth: 0 },
-                          ]}
-                          onPress={() => {
-                            setEditOccupation(val);
-                            setActiveDropdown(null);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownMenuItemText,
-                              isSelected && styles.dropdownMenuItemTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {val}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-
-            {/* 3. Annual Income Dropdown */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'Annual Income' : 'वार्षिक आय'}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownButton,
-                  activeDropdown === 'income' && styles.dropdownButtonActive,
-                ]}
-                onPress={() => setActiveDropdown(activeDropdown === 'income' ? null : 'income')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.dropdownValueText,
-                    !editIncome && styles.dropdownPlaceholderText,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {editIncome || (isEn ? 'Select Annual Income' : 'वार्षिक आय चुनें')}
-                </Text>
-                <Ionicons
-                  name={activeDropdown === 'income' ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={activeDropdown === 'income' ? '#0A2540' : '#64748B'}
-                />
-              </TouchableOpacity>
-
-              {activeDropdown === 'income' && (
-                <View style={styles.dropdownMenu}>
-                  <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }} showsVerticalScrollIndicator={true}>
-                    {INCOME_OPTIONS.map((item, idx) => {
-                      const val = isEn ? item.en : item.hi;
-                      const isSelected = editIncome === val || editIncome.includes(item.en) || editIncome.includes(item.hi.split(' ')[0]);
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[
-                            styles.dropdownMenuItem,
-                            isSelected && styles.dropdownMenuItemActive,
-                            idx === INCOME_OPTIONS.length - 1 && { borderBottomWidth: 0 },
-                          ]}
-                          onPress={() => {
-                            setEditIncome(val);
-                            setActiveDropdown(null);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownMenuItemText,
-                              isSelected && styles.dropdownMenuItemTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {val}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-
-            {/* 4. House Type Dropdown */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'House Type' : 'मकान का प्रकार'}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownButton,
-                  activeDropdown === 'houseType' && styles.dropdownButtonActive,
-                ]}
-                onPress={() => setActiveDropdown(activeDropdown === 'houseType' ? null : 'houseType')}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.dropdownValueText,
-                    !editHouseType && styles.dropdownPlaceholderText,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {editHouseType || (isEn ? 'Select House Type' : 'मकान का प्रकार चुनें')}
-                </Text>
-                <Ionicons
-                  name={activeDropdown === 'houseType' ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={activeDropdown === 'houseType' ? '#0A2540' : '#64748B'}
-                />
-              </TouchableOpacity>
-
-              {activeDropdown === 'houseType' && (
-                <View style={styles.dropdownMenu}>
-                  <ScrollView nestedScrollEnabled style={{ maxHeight: 180 }} showsVerticalScrollIndicator={true}>
-                    {HOUSE_TYPE_OPTIONS.map((item, idx) => {
-                      const val = isEn ? item.en : item.hi;
-                      const isSelected = editHouseType === val || editHouseType.includes(item.en) || editHouseType.includes(item.hi.split(' ')[0]);
-                      return (
-                        <TouchableOpacity
-                          key={idx}
-                          style={[
-                            styles.dropdownMenuItem,
-                            isSelected && styles.dropdownMenuItemActive,
-                            idx === HOUSE_TYPE_OPTIONS.length - 1 && { borderBottomWidth: 0 },
-                          ]}
-                          onPress={() => {
-                            setEditHouseType(val);
-                            setActiveDropdown(null);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownMenuItemText,
-                              isSelected && styles.dropdownMenuItemTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {val}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-
-            {/* Category / सामाजिक श्रेणी */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>{isEn ? 'Social Category' : 'सामाजिक श्रेणी (Category)'}</Text>
-              
-              {/* Quick Select Category Chips */}
-              <View style={styles.categoryChipsRow}>
-                {[
-                  { key: 'General', labelHi: 'सामान्य', labelEn: 'General' },
-                  { key: 'OBC', labelHi: 'ओबीसी', labelEn: 'OBC' },
-                  { key: 'SC', labelHi: 'एससी', labelEn: 'SC' },
-                  { key: 'ST', labelHi: 'एसटी', labelEn: 'ST' },
-                ].map((cat) => {
-                  const catVal = isEn ? cat.labelEn : cat.labelHi;
-                  const isSelected = editCategory.toLowerCase().includes(cat.key.toLowerCase()) || 
-                                     editCategory.toLowerCase().includes(cat.labelHi.toLowerCase());
-                  return (
-                    <TouchableOpacity
-                      key={cat.key}
-                      style={[
-                        styles.categoryChip,
-                        isSelected && styles.categoryChipActive,
-                      ]}
-                      onPress={() => setEditCategory(catVal)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
+                  {/* 1. State Dropdown - only if already provided */}
+                  {hasState && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{isEn ? 'State' : 'राज्य'}</Text>
+                      <TouchableOpacity
                         style={[
-                          styles.categoryChipText,
-                          isSelected && styles.categoryChipTextActive,
+                          styles.dropdownButton,
+                          activeDropdown === 'state' && styles.dropdownButtonActive,
                         ]}
+                        onPress={() =>
+                          setActiveDropdown(activeDropdown === 'state' ? null : 'state')
+                        }
+                        activeOpacity={0.8}
                       >
-                        {isEn ? cat.labelEn : cat.labelHi}
+                        <Text
+                          style={[
+                            styles.dropdownValueText,
+                            !editState && styles.dropdownPlaceholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {editState || (isEn ? 'Select State' : 'राज्य चुनें')}
+                        </Text>
+                        <Ionicons
+                          name={activeDropdown === 'state' ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={activeDropdown === 'state' ? '#0A2540' : '#64748B'}
+                        />
+                      </TouchableOpacity>
+
+                      {activeDropdown === 'state' && (
+                        <View style={styles.dropdownMenu}>
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: 180 }}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {STATE_OPTIONS.map((item, idx) => {
+                              const val = isEn ? item.en : item.hi;
+                              const isSelected =
+                                editState === val ||
+                                editState.includes(item.en) ||
+                                editState.includes(item.hi.split(' ')[0]);
+                              return (
+                                <TouchableOpacity
+                                  key={idx}
+                                  style={[
+                                    styles.dropdownMenuItem,
+                                    isSelected && styles.dropdownMenuItemActive,
+                                    idx === STATE_OPTIONS.length - 1 && { borderBottomWidth: 0 },
+                                  ]}
+                                  onPress={() => {
+                                    setEditState(val);
+                                    setActiveDropdown(null);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dropdownMenuItemText,
+                                      isSelected && styles.dropdownMenuItemTextActive,
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {val}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* 2. Occupation Dropdown - only if already provided */}
+                  {hasOccupation && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{isEn ? 'Occupation' : 'व्यवसाय'}</Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.dropdownButton,
+                          activeDropdown === 'occupation' && styles.dropdownButtonActive,
+                        ]}
+                        onPress={() =>
+                          setActiveDropdown(activeDropdown === 'occupation' ? null : 'occupation')
+                        }
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownValueText,
+                            !editOccupation && styles.dropdownPlaceholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {editOccupation || (isEn ? 'Select Occupation' : 'व्यवसाय चुनें')}
+                        </Text>
+                        <Ionicons
+                          name={activeDropdown === 'occupation' ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={activeDropdown === 'occupation' ? '#0A2540' : '#64748B'}
+                        />
+                      </TouchableOpacity>
+
+                      {activeDropdown === 'occupation' && (
+                        <View style={styles.dropdownMenu}>
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: 180 }}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {OCCUPATION_OPTIONS.map((item, idx) => {
+                              const val = isEn ? item.en : item.hi;
+                              const isSelected =
+                                editOccupation === val ||
+                                editOccupation.includes(item.en) ||
+                                editOccupation.includes(item.hi.split(' ')[0]);
+                              return (
+                                <TouchableOpacity
+                                  key={idx}
+                                  style={[
+                                    styles.dropdownMenuItem,
+                                    isSelected && styles.dropdownMenuItemActive,
+                                    idx === OCCUPATION_OPTIONS.length - 1 && {
+                                      borderBottomWidth: 0,
+                                    },
+                                  ]}
+                                  onPress={() => {
+                                    setEditOccupation(val);
+                                    setActiveDropdown(null);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dropdownMenuItemText,
+                                      isSelected && styles.dropdownMenuItemTextActive,
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {val}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* 3. Annual Income Dropdown - only if already provided */}
+                  {hasIncome && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{isEn ? 'Annual Income' : 'वार्षिक आय'}</Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.dropdownButton,
+                          activeDropdown === 'income' && styles.dropdownButtonActive,
+                        ]}
+                        onPress={() =>
+                          setActiveDropdown(activeDropdown === 'income' ? null : 'income')
+                        }
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownValueText,
+                            !editIncome && styles.dropdownPlaceholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {editIncome || (isEn ? 'Select Annual Income' : 'वार्षिक आय चुनें')}
+                        </Text>
+                        <Ionicons
+                          name={activeDropdown === 'income' ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={activeDropdown === 'income' ? '#0A2540' : '#64748B'}
+                        />
+                      </TouchableOpacity>
+
+                      {activeDropdown === 'income' && (
+                        <View style={styles.dropdownMenu}>
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: 180 }}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {INCOME_OPTIONS.map((item, idx) => {
+                              const val = isEn ? item.en : item.hi;
+                              const isSelected =
+                                editIncome === val ||
+                                editIncome.includes(item.en) ||
+                                editIncome.includes(item.hi.split(' ')[0]);
+                              return (
+                                <TouchableOpacity
+                                  key={idx}
+                                  style={[
+                                    styles.dropdownMenuItem,
+                                    isSelected && styles.dropdownMenuItemActive,
+                                    idx === INCOME_OPTIONS.length - 1 && { borderBottomWidth: 0 },
+                                  ]}
+                                  onPress={() => {
+                                    setEditIncome(val);
+                                    setActiveDropdown(null);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dropdownMenuItemText,
+                                      isSelected && styles.dropdownMenuItemTextActive,
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {val}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* 4. House Type Dropdown - only if already provided */}
+                  {hasHouseType && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{isEn ? 'House Type' : 'मकान का प्रकार'}</Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.dropdownButton,
+                          activeDropdown === 'houseType' && styles.dropdownButtonActive,
+                        ]}
+                        onPress={() =>
+                          setActiveDropdown(activeDropdown === 'houseType' ? null : 'houseType')
+                        }
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownValueText,
+                            !editHouseType && styles.dropdownPlaceholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {editHouseType || (isEn ? 'Select House Type' : 'मकान का प्रकार चुनें')}
+                        </Text>
+                        <Ionicons
+                          name={activeDropdown === 'houseType' ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={activeDropdown === 'houseType' ? '#0A2540' : '#64748B'}
+                        />
+                      </TouchableOpacity>
+
+                      {activeDropdown === 'houseType' && (
+                        <View style={styles.dropdownMenu}>
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: 180 }}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {HOUSE_TYPE_OPTIONS.map((item, idx) => {
+                              const val = isEn ? item.en : item.hi;
+                              const isSelected =
+                                editHouseType === val ||
+                                editHouseType.includes(item.en) ||
+                                editHouseType.includes(item.hi.split(' ')[0]);
+                              return (
+                                <TouchableOpacity
+                                  key={idx}
+                                  style={[
+                                    styles.dropdownMenuItem,
+                                    isSelected && styles.dropdownMenuItemActive,
+                                    idx === HOUSE_TYPE_OPTIONS.length - 1 && { borderBottomWidth: 0 },
+                                  ]}
+                                  onPress={() => {
+                                    setEditHouseType(val);
+                                    setActiveDropdown(null);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.dropdownMenuItemText,
+                                      isSelected && styles.dropdownMenuItemTextActive,
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {val}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark-circle" size={16} color="#0A2540" />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* 5. Category - only if already provided */}
+                  {hasCategory && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>
+                        {isEn ? 'Social Category' : 'सामाजिक श्रेणी (Category)'}
                       </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
 
-              <TextInput
-                style={styles.textInput}
-                value={editCategory}
-                onChangeText={setEditCategory}
-                placeholder={isEn ? 'General, OBC, SC, ST' : 'सामान्य, ओबीसी, एससी, एसटी'}
-                placeholderTextColor="#94A3B8"
-              />
+                      <View style={styles.categoryChipsRow}>
+                        {[
+                          { key: 'General', labelHi: 'सामान्य', labelEn: 'General' },
+                          { key: 'OBC', labelHi: 'ओबीसी', labelEn: 'OBC' },
+                          { key: 'SC', labelHi: 'एससी', labelEn: 'SC' },
+                          { key: 'ST', labelHi: 'एसटी', labelEn: 'ST' },
+                        ].map((cat) => {
+                          const catVal = isEn ? cat.labelEn : cat.labelHi;
+                          const isSelected =
+                            editCategory.toLowerCase().includes(cat.key.toLowerCase()) ||
+                            editCategory.toLowerCase().includes(cat.labelHi.toLowerCase());
+                          return (
+                            <TouchableOpacity
+                              key={cat.key}
+                              style={[
+                                styles.categoryChip,
+                                isSelected && styles.categoryChipActive,
+                              ]}
+                              onPress={() => setEditCategory(catVal)}
+                              activeOpacity={0.7}
+                            >
+                              <Text
+                                style={[
+                                  styles.categoryChipText,
+                                  isSelected && styles.categoryChipTextActive,
+                                ]}
+                              >
+                                {isEn ? cat.labelEn : cat.labelHi}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      <TextInput
+                        style={styles.textInput}
+                        value={editCategory}
+                        onChangeText={setEditCategory}
+                        placeholder={
+                          isEn ? 'General, OBC, SC, ST' : 'सामान्य, ओबीसी, एससी, एसटी'
+                        }
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  )}
+
+                  {/* 6. Dynamic Attributes already provided */}
+                  {dynamicFilledAttrs.map((attr) => (
+                    <View key={attr.key} style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>
+                        {isEn ? attr.labelEn : attr.labelHi}
+                      </Text>
+                      {attr.type === 'select' && attr.options ? (
+                        <View style={{ gap: 6 }}>
+                          {attr.options.map((opt, optIdx) => {
+                            const optVal = isEn ? opt.en : opt.hi;
+                            const isSelected =
+                              editDynamicFields[attr.key] === optVal ||
+                              editDynamicFields[attr.key] === opt.en ||
+                              editDynamicFields[attr.key] === opt.hi;
+                            return (
+                              <TouchableOpacity
+                                key={optIdx}
+                                style={[
+                                  styles.optionSelectCard,
+                                  isSelected && styles.optionSelectCardActive,
+                                ]}
+                                onPress={() =>
+                                  setEditDynamicFields((prev) => ({
+                                    ...prev,
+                                    [attr.key]: optVal,
+                                  }))
+                                }
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.optionSelectCardText,
+                                    isSelected && styles.optionSelectCardTextActive,
+                                  ]}
+                                >
+                                  {optVal}
+                                </Text>
+                                {isSelected && (
+                                  <Ionicons
+                                    name="checkmark-circle"
+                                    size={16}
+                                    color="#0A2540"
+                                  />
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ) : (
+                        <TextInput
+                          style={styles.textInput}
+                          value={editDynamicFields[attr.key] || ''}
+                          onChangeText={(val) =>
+                            setEditDynamicFields((prev) => ({
+                              ...prev,
+                              [attr.key]: val,
+                            }))
+                          }
+                          placeholder={
+                            isEn ? `Enter ${attr.labelEn}` : `${attr.labelHi} दर्ज करें`
+                          }
+                          placeholderTextColor="#94A3B8"
+                          keyboardType={attr.type === 'number' ? 'numeric' : 'default'}
+                        />
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setIsEditingProfile(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCancelText}>{isEn ? 'Cancel' : 'रद्द करें'}</Text>
+              </TouchableOpacity>
+
+              {hasAnyDetails && (
+                <TouchableOpacity
+                  style={styles.modalSubmitBtn}
+                  onPress={handleSaveProfile}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalSubmitText}>
+                    {isEn ? 'Save' : 'सुरक्षित करें'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
-          </ScrollView>
-
-          <View style={styles.modalButtonsRow}>
-            <TouchableOpacity
-              style={styles.modalCancelBtn}
-              onPress={() => setIsEditingProfile(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.modalCancelText}>{isEn ? 'Cancel' : 'रद्द करें'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modalSubmitBtn}
-              onPress={handleSaveProfile}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.modalSubmitText}>{isEn ? 'Save' : 'सुरक्षित करें'}</Text>
-            </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  };
+
+  // ==========================================
+  // MODAL: ADD MORE DETAILS MODAL / BOTTOM SHEET
+  // ==========================================
+  const renderAddMoreDetailsModal = () => {
+    if (!isAddingMoreDetails) return null;
+
+    const selectedAttr = activeAddDetailKey
+      ? PROFILE_ATTRIBUTES.find((a) => a.key === activeAddDetailKey)
+      : null;
+
+    return (
+      <Modal
+        visible={isAddingMoreDetails}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (activeAddDetailKey) {
+            setActiveAddDetailKey(null);
+            setAddDetailValue('');
+          } else {
+            setIsAddingMoreDetails(false);
+          }
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            {selectedAttr ? (
+              <View>
+                {/* Header with back */}
+                <View style={styles.addDetailHeader}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setActiveAddDetailKey(null);
+                      setAddDetailValue('');
+                    }}
+                    style={styles.addDetailBackBtn}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="arrow-back" size={20} color="#0A2540" />
+                  </TouchableOpacity>
+                  <Text style={styles.addDetailHeaderTitle}>
+                    {isEn ? selectedAttr.labelEn : selectedAttr.labelHi}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setActiveAddDetailKey(null);
+                      setIsAddingMoreDetails(false);
+                      setAddDetailValue('');
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.addDetailSubtitle}>
+                  {isEn
+                    ? `Enter or select your ${selectedAttr.labelEn.toLowerCase()}`
+                    : `कृपया अपना ${selectedAttr.labelHi} दर्ज करें या चुनें`}
+                </Text>
+
+                {/* Body depending on type */}
+                <View style={{ marginTop: 12, marginBottom: 18 }}>
+                  {selectedAttr.type === 'select' && selectedAttr.options ? (
+                    <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled={true}>
+                      {selectedAttr.options.map((opt, idx) => {
+                        const optVal = isEn ? opt.en : opt.hi;
+                        const isSelected =
+                          addDetailValue === optVal ||
+                          addDetailValue === opt.en ||
+                          addDetailValue === opt.hi;
+                        return (
+                          <TouchableOpacity
+                            key={idx}
+                            style={[
+                              styles.optionSelectCard,
+                              isSelected && styles.optionSelectCardActive,
+                            ]}
+                            onPress={() => setAddDetailValue(optVal)}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.optionSelectCardText,
+                                isSelected && styles.optionSelectCardTextActive,
+                              ]}
+                            >
+                              {optVal}
+                            </Text>
+                            {isSelected && (
+                              <Ionicons name="checkmark-circle" size={18} color="#0A2540" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  ) : (
+                    <TextInput
+                      style={styles.textInput}
+                      value={addDetailValue}
+                      onChangeText={setAddDetailValue}
+                      placeholder={
+                        isEn ? `Enter ${selectedAttr.labelEn}` : `${selectedAttr.labelHi} दर्ज करें`
+                      }
+                      placeholderTextColor="#94A3B8"
+                      keyboardType={selectedAttr.type === 'number' ? 'numeric' : 'default'}
+                      autoFocus={true}
+                    />
+                  )}
+                </View>
+
+                {/* Save button */}
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => {
+                      setActiveAddDetailKey(null);
+                      setAddDetailValue('');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.modalCancelText}>{isEn ? 'Back' : 'वापस'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalSubmitBtn}
+                    onPress={() => handleSaveSingleAttribute(selectedAttr.key, addDetailValue)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.modalSubmitText}>
+                      {isEn ? 'Save' : 'सुरक्षित करें'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              /* Attribute Selection List Grouped by Category */
+              <View>
+                <View style={styles.addDetailHeader}>
+                  <Text style={styles.addDetailHeaderTitle}>
+                    {isEn ? 'Add More Details' : 'अन्य विवरण जोड़ें'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setIsAddingMoreDetails(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.addDetailSubtitle}>
+                  {isEn
+                    ? 'Select an attribute below to add to your profile'
+                    : 'अपनी प्रोफ़ाइल में जोड़ने के लिए नीचे दिए गए विवरण में से चुनें'}
+                </Text>
+
+                <ScrollView
+                  style={{ maxHeight: 380, marginTop: 10, marginBottom: 12 }}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {(['personal', 'location', 'education', 'economic', 'social'] as const).map(
+                    (catKey) => {
+                      const catAttrs = PROFILE_ATTRIBUTES.filter((a) => a.category === catKey);
+                      if (catAttrs.length === 0) return null;
+                      const catTitle = isEn
+                        ? CATEGORY_LABELS[catKey].en
+                        : CATEGORY_LABELS[catKey].hi;
+
+                      return (
+                        <View key={catKey} style={{ marginBottom: 14 }}>
+                          <Text style={styles.attrCategoryHeaderTitle}>{catTitle}</Text>
+                          <View style={styles.attrGridRow}>
+                            {catAttrs.map((attr) => {
+                              const val =
+                                profile[attr.key] !== undefined && profile[attr.key] !== null && String(profile[attr.key]).trim() !== ''
+                                  ? profile[attr.key]
+                                  : attr.key === 'education'
+                                  ? (profile as any).education_level
+                                  : attr.key === 'annualIncome'
+                                  ? (profile as any).annual_family_income
+                                  : attr.key === 'category'
+                                  ? (profile as any).social_category
+                                  : undefined;
+                              const isFilled = val !== undefined && val !== null && String(val).trim() !== '';
+
+                              return (
+                                <TouchableOpacity
+                                  key={attr.key}
+                                  style={[
+                                    styles.attrSelectChip,
+                                    isFilled && styles.attrSelectChipFilled,
+                                  ]}
+                                  onPress={() => {
+                                    setActiveAddDetailKey(attr.key);
+                                    setAddDetailValue(val ? String(val) : '');
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Ionicons
+                                    name={isFilled ? 'checkmark-circle' : 'add-circle-outline'}
+                                    size={15}
+                                    color={isFilled ? '#16A34A' : '#0A2540'}
+                                    style={{ marginRight: 6 }}
+                                  />
+                                  <Text
+                                    style={[
+                                      styles.attrSelectChipText,
+                                      isFilled && styles.attrSelectChipTextFilled,
+                                    ]}
+                                  >
+                                    {isEn ? attr.labelEn : attr.labelHi}
+                                  </Text>
+                                  {isFilled && (
+                                    <Text style={styles.attrFilledTag}>
+                                      {isEn ? 'Filled' : 'भरा हुआ'}
+                                    </Text>
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    }
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setIsAddingMoreDetails(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalCancelText}>{isEn ? 'Close' : 'बंद करें'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   // ==========================================
   // MODAL 3: CHANGE PASSWORD MODAL
@@ -1342,7 +1931,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         {/* Center Large Image */}
         <View style={styles.fullImageCenterContainer}>
-          {activeDemoUser.image ? (
+          {activeDemoUser.profile?.avatar || (activeDemoUser.profile as any)?.imageUrl ? (
+            <Image
+              source={{ uri: activeDemoUser.profile.avatar || (activeDemoUser.profile as any).imageUrl }}
+              style={styles.fullImageLarge}
+              resizeMode="cover"
+            />
+          ) : activeDemoUser.image ? (
             <Image
               source={activeDemoUser.image}
               style={styles.fullImageLarge}
@@ -1484,6 +2079,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       {renderPhotoPickerModal()}
       {renderLanguageModal()}
       {renderEditProfileModal()}
+      {renderAddMoreDetailsModal()}
       {renderPasswordModal()}
       {renderPrivacyModal()}
 
@@ -1607,32 +2203,32 @@ const styles = StyleSheet.create({
     paddingBottom: 90,
   },
 
-  // Profile Details Simple Card (CuraTera Original)
+  // Profile Details Compact Card (CuraTera Original)
   profileDetailsCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 14,
+    marginBottom: 12,
     overflow: 'hidden',
   },
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 13,
-    paddingHorizontal: 16,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     backgroundColor: '#FAFCFF',
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F1F5F9',
   },
   cardHeaderTitleBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   cardHeaderTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0A2540',
   },
@@ -1640,49 +2236,175 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 6,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   cardEditPillText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#0A2540',
   },
   detailsBody: {
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
+    minHeight: 26,
   },
   detailLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748B',
     fontWeight: '500',
   },
   detailValue: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     color: '#0F172A',
-    fontWeight: '700',
+    fontWeight: '600',
     textAlign: 'right',
     maxWidth: '58%',
   },
   detailValueEmpty: {
     color: '#94A3B8',
-    fontWeight: '500',
+    fontWeight: '400',
     fontStyle: 'italic',
   },
   rowDividerInset: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: '#F1F5F9',
-    marginHorizontal: 16,
+    marginHorizontal: 14,
+  },
+  noDetailsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  noDetailsText: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  addMoreBtnWrapper: {
+    paddingVertical: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  addMoreCapsuleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2F6',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  addMoreCapsuleBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0A2540',
+  },
+
+  // Add More Details Modal & Bottom Sheet styles
+  addDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  addDetailBackBtn: {
+    marginRight: 8,
+  },
+  addDetailHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0A2540',
+    flex: 1,
+  },
+  addDetailSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  attrCategoryHeaderTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  attrGridRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  attrSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 4,
+  },
+  attrSelectChipFilled: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  attrSelectChipText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  attrSelectChipTextFilled: {
+    color: '#166534',
+  },
+  attrFilledTag: {
+    fontSize: 10,
+    color: '#16A34A',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  optionSelectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 6,
+  },
+  optionSelectCardActive: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#0A2540',
+  },
+  optionSelectCardText: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  optionSelectCardTextActive: {
+    color: '#0A2540',
+    fontWeight: '700',
   },
 
   // Grouped Card Styling (CuraTera Original)

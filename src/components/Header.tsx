@@ -125,14 +125,20 @@ export const Header: React.FC<HeaderProps> = ({
             onPress={onNavigateToProfile || onOpenUserSwitcher}
             activeOpacity={0.7}
           >
-            {activeDemoUser.image ? (
+            {activeDemoUser.profile?.avatar || (activeDemoUser.profile as any)?.imageUrl ? (
+              <Image
+                source={{ uri: activeDemoUser.profile.avatar || (activeDemoUser.profile as any).imageUrl }}
+                style={styles.avatarImg}
+                resizeMode="cover"
+              />
+            ) : activeDemoUser.image ? (
               <Image
                 source={activeDemoUser.image}
                 style={styles.avatarImg}
                 resizeMode="cover"
               />
             ) : (
-              <Text style={styles.avatarEmojiText}>{activeDemoUser.avatar}</Text>
+              <Text style={styles.avatarEmojiText}>{activeDemoUser.avatar || '👤'}</Text>
             )}
           </TouchableOpacity>
         )}
