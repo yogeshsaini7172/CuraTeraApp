@@ -1931,7 +1931,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         {/* Center Large Image */}
         <View style={styles.fullImageCenterContainer}>
-          {activeDemoUser.image ? (
+          {activeDemoUser.profile?.avatar || (activeDemoUser.profile as any)?.imageUrl ? (
+            <Image
+              source={{ uri: activeDemoUser.profile.avatar || (activeDemoUser.profile as any).imageUrl }}
+              style={styles.fullImageLarge}
+              resizeMode="cover"
+            />
+          ) : activeDemoUser.image ? (
             <Image
               source={activeDemoUser.image}
               style={styles.fullImageLarge}

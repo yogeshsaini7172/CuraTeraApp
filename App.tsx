@@ -72,6 +72,7 @@ const createCitizenUser = (email: string, name?: string, profileData?: Partial<U
 
   return {
     id: email || 'citizen',
+    email: email,
     name: displayName,
     nameHi: displayName,
     nameEn: displayName,

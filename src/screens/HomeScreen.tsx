@@ -253,7 +253,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const currentActiveScheme = displaySchemes[activeIndex] || displaySchemes[0];
   const isCurrentVoiceAi = currentActiveScheme?.id === 'intro-voice-mitra';
-  const activeCatTheme = CATEGORY_THEMES[currentActiveScheme?.category || ''] || CATEGORY_THEMES.default;
+  const carouselColors = ['health', 'housing', 'education', 'farming', 'pension', 'business'];
+  const dynamicActiveThemeKey = carouselColors[(activeIndex - 1 + 6) % 6];
+  const activeCatTheme = isCurrentVoiceAi 
+    ? (CATEGORY_THEMES[currentActiveScheme?.category || ''] || CATEGORY_THEMES.default)
+    : CATEGORY_THEMES[dynamicActiveThemeKey];
   
   const activeThemeDark = isCurrentVoiceAi ? (currentActiveScheme?.themeDark || '#1E3A8A') : activeCatTheme.themeDark;
   const activeThemeLight = isCurrentVoiceAi ? (currentActiveScheme?.themeLight || '#EFF6FF') : activeCatTheme.themeLight;
@@ -414,7 +418,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onTouchStart={handleTouchStart}
             onScrollBeginDrag={handleTouchStart}
           >
-            {displaySchemes.map((scheme) => {
+            {displaySchemes.map((scheme, index) => {
               const isVoiceAi = scheme.id === 'intro-voice-mitra';
               const title = isEn ? scheme.titleEn : scheme.titleHi;
               const benefit = isEn
@@ -422,7 +426,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 : (scheme.benefitAmountHi || scheme.benefitAmount);
               const infoText = isEn ? scheme.descriptionEn : scheme.descriptionHi;
 
-              const catTheme = CATEGORY_THEMES[scheme.category || ''] || CATEGORY_THEMES.default;
+              const carouselColors = ['health', 'housing', 'education', 'farming', 'pension', 'business'];
+              const dynamicThemeKey = carouselColors[(index - 1 + 6) % 6];
+              const catTheme = isVoiceAi 
+                ? (CATEGORY_THEMES[scheme.category || ''] || CATEGORY_THEMES.default)
+                : CATEGORY_THEMES[dynamicThemeKey];
               const themeDark = isVoiceAi ? (scheme.themeDark || '#1E293B') : catTheme.themeDark;
               const themeBorder = isVoiceAi ? (scheme.themeBorder || '#FDBA74') : catTheme.themeBorder;
               const cardTextColors = getCardTextColors(scheme, isVoiceAi);
