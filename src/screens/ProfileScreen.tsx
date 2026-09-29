@@ -16,6 +16,7 @@ import {
   PanResponder,
   Dimensions,
   BackHandler,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '../utils/icons';
 import { launchImageLibraryAsync, launchCameraAsync } from '../utils/imagePicker';
@@ -24,6 +25,8 @@ import { UserProfile } from '../types';
 import { SupportedLanguage } from '../i18n/translations';
 import { PROFILE_ATTRIBUTES, CATEGORY_LABELS } from '../data/profileAttributes';
 import apiClient from '../api/client';
+import { authApi } from '../api/authApi';
+
 
 interface ProfileScreenProps {
   onStartReProfiling?: () => void;
@@ -153,13 +156,116 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [editHouseType, setEditHouseType] = useState(displayHouseType);
   const [editCategory, setEditCategory] = useState(displayCategory);
 
-  // Change Password state
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // Change Password Modal state (OTP + Reset)
+  const [pwdStep, setPwdStep] = useState<1 | 2 | 3>(1);
+  const [pwdEmail, setPwdEmail] = useState(activeDemoUser.email || (profile as any).email || '');
+  const [pwdOtp, setPwdOtp] = useState('');
+  const [pwdNew, setPwdNew] = useState('');
+  const [pwdConfirm, setPwdConfirm] = useState('');
+  const [pwdShowNew, setPwdShowNew] = useState(false);
+  const [pwdShowConfirm, setPwdShowConfirm] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
+
+  const handlePwdRequestOTP = async () => {
+    setPwdError(null);
+    setPwdSuccess(null);
+    const targetEmail = (pwdEmail || activeDemoUser.email || (profile as any).email || '').trim();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setPwdError(isEn ? 'Please enter a valid email address.' : 'कृपया एक मान्य ईमेल पता दर्ज करें।');
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await authApi.forgotPassword(targetEmail);
+      setPwdSuccess(
+        res.message || (isEn ? 'An OTP has been sent to your email.' : 'आपकी ईमेल पर OTP भेज दिया गया है।')
+      );
+      setPwdStep(2);
+    } catch (err: any) {
+      setPwdError(
+        err?.response?.data?.message ||
+        (isEn ? 'Failed to send OTP. Please try again.' : 'OTP भेजने में विफलता। पुनः प्रयास करें।')
+      );
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
+  const handlePwdVerifyOTP = async () => {
+    setPwdError(null);
+    setPwdSuccess(null);
+    const targetEmail = (pwdEmail || activeDemoUser.email || (profile as any).email || '').trim();
+
+    if (!pwdOtp.trim() || pwdOtp.trim().length !== 6) {
+      setPwdError(isEn ? 'Please enter the 6-digit OTP code.' : 'कृपया 6-अंकों का OTP कोड दर्ज करें।');
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await authApi.verifyOtp(targetEmail, pwdOtp.trim());
+      setPwdSuccess(
+        res.message || (isEn ? 'OTP verified! Enter your new password below.' : 'OTP सत्यापित हुआ! अपना नया पासवर्ड सेट करें।')
+      );
+      setPwdStep(3);
+    } catch (err: any) {
+      setPwdError(
+        err?.response?.data?.message ||
+        (isEn ? 'Invalid or expired OTP code.' : 'अमान्य या समाप्त OTP कोड।')
+      );
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
+  const handlePwdResetPassword = async () => {
+    setPwdError(null);
+    setPwdSuccess(null);
+    const targetEmail = (pwdEmail || activeDemoUser.email || (profile as any).email || '').trim();
+
+    if (!pwdNew || pwdNew.length < 6) {
+      setPwdError(isEn ? 'New password must be at least 6 characters.' : 'नया पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
+      return;
+    }
+    if (pwdNew !== pwdConfirm) {
+      setPwdError(isEn ? 'New password and confirm password do not match.' : 'नया पासवर्ड और कन्फर्म पासवर्ड मेल नहीं खाते।');
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await authApi.resetPassword({
+        email: targetEmail,
+        otp: pwdOtp.trim(),
+        new_password: pwdNew,
+      });
+      setPwdSuccess(
+        res.message || (isEn ? 'Password updated successfully!' : 'पासवर्ड सफलतापूर्वक बदल दिया गया!')
+      );
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setPwdStep(1);
+        setPwdOtp('');
+        setPwdNew('');
+        setPwdConfirm('');
+        setPwdSuccess(null);
+      }, 1800);
+    } catch (err: any) {
+      setPwdError(
+        err?.response?.data?.message ||
+        (isEn ? 'Password update failed. Try again.' : 'पासवर्ड अपडेट विफल रहा। पुनः प्रयास करें।')
+      );
+    } finally {
+      setPwdLoading(false);
+    }
+  };
 
   // Step-by-step internal back action handler
   const handleInternalBack = useCallback((): boolean => {
+
     if (showFullImageViewer) {
       setShowFullImageViewer(false);
       return true;
@@ -727,10 +833,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </TouchableOpacity>
+
+          <View style={styles.rowDivider} />
+
+          {/* Change / Reset Password */}
+          <TouchableOpacity
+            style={styles.cardRow}
+            onPress={() => {
+              setPwdStep(1);
+              setPwdError(null);
+              setPwdSuccess(null);
+              setShowPasswordModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardRowLeft}>
+              <Ionicons name="key-outline" size={20} color="#0A2540" style={styles.cardRowIcon} />
+              <View>
+                <Text style={styles.cardRowTitle}>{isEn ? 'change / reset password' : 'पासवर्ड बदलें / रीसेट करें'}</Text>
+                <Text style={styles.cardRowSub}>{isEn ? 'OTP verification & security' : 'OTP सत्यापन व सुरक्षा'}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </>
   );
+
 
   // ==========================================
   // VIEW 1: MAIN PROFILE SCREEN (CuraTera Identity)
@@ -1783,7 +1913,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   };
 
   // ==========================================
-  // MODAL 3: CHANGE PASSWORD MODAL
+  // MODAL 3: CHANGE / RESET PASSWORD MODAL (OTP Verification & Direct Password Change)
   // ==========================================
   const renderPasswordModal = () => (
     <Modal
@@ -1792,69 +1922,183 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       animationType="fade"
       onRequestClose={() => setShowPasswordModal(false)}
     >
-      <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>
-            {isEn ? 'Change Password' : 'पासवर्ड बदलें'}
-          </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 }}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
+        >
+          <View style={[styles.modalCard, { maxWidth: 440, width: '90%' }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <Text style={styles.modalTitle}>
+                {isEn ? 'Change / Reset Password' : 'पासवर्ड बदलें / रीसेट करें'}
+              </Text>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{isEn ? 'Current Password' : 'वर्तमान पासवर्ड'}</Text>
-            <TextInput
-              style={styles.textInput}
-              secureTextEntry
-              value={oldPassword}
-              onChangeText={setOldPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{isEn ? 'New Password' : 'नया पासवर्ड'}</Text>
-            <TextInput
-              style={styles.textInput}
-              secureTextEntry
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{isEn ? 'Confirm New Password' : 'नया पासवर्ड दोबारा दर्ज करें'}</Text>
-            <TextInput
-              style={styles.textInput}
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#94A3B8"
-            />
-          </View>
-
-          <View style={styles.modalButtonsRow}>
             <TouchableOpacity
-              style={styles.modalCancelBtn}
               onPress={() => setShowPasswordModal(false)}
-              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={styles.modalCancelText}>{isEn ? 'Cancel' : 'रद्द करें'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.modalSubmitBtn}
-              onPress={handleChangePasswordSubmit}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.modalSubmitText}>{isEn ? 'Update' : 'अपडेट करें'}</Text>
+              <Ionicons name="close" size={22} color="#64748B" />
             </TouchableOpacity>
           </View>
+
+          {/* Banners */}
+          {pwdError && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 8, padding: 10, marginBottom: 12, gap: 8 }}>
+              <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+              <Text style={{ flex: 1, fontSize: 12, color: '#B91C1C', fontWeight: '600' }}>{pwdError}</Text>
+            </View>
+          )}
+
+          {pwdSuccess && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7', borderRadius: 8, padding: 10, marginBottom: 12, gap: 8 }}>
+              <Ionicons name="checkmark-circle" size={16} color="#065F46" />
+              <Text style={{ flex: 1, fontSize: 12, color: '#065F46', fontWeight: '600' }}>{pwdSuccess}</Text>
+            </View>
+          )}
+
+          {pwdStep === 1 ? (
+            <View>
+              <Text style={{ fontSize: 13, color: '#475569', marginBottom: 14, lineHeight: 18 }}>
+                {isEn
+                  ? 'Send a 6-digit OTP code to your registered email to reset password:'
+                  : 'पासवर्ड रीसेट करने के लिए अपने पंजीकृत ईमेल पर 6-अंकीय OTP कोड भेजें:'}
+              </Text>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{isEn ? 'Registered Email' : 'पंजीकृत ईमेल'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46, gap: 8 }}>
+                  <Ionicons name="mail-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 14, color: '#0F172A' }}
+                    value={pwdEmail}
+                    onChangeText={setPwdEmail}
+                    placeholder="name@example.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, pwdLoading && { opacity: 0.7 }]}
+                onPress={handlePwdRequestOTP}
+                disabled={pwdLoading}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {isEn ? 'Send OTP Code' : 'OTP कोड भेजें'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : pwdStep === 2 ? (
+            <View>
+              <Text style={{ fontSize: 13, color: '#475569', marginBottom: 14, lineHeight: 18 }}>
+                {isEn
+                  ? `OTP sent to ${pwdEmail}. Enter the 6-digit code to verify:`
+                  : `OTP ${pwdEmail} पर भेजा गया। सत्यापित करने के लिए 6-अंकीय कोड दर्ज करें:`}
+              </Text>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{isEn ? '6-Digit OTP Code' : '6-अंकीय OTP कोड'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46, gap: 8 }}>
+                  <Ionicons name="key-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 15, color: '#0F172A', letterSpacing: 4, fontWeight: '700' }}
+                    value={pwdOtp}
+                    onChangeText={setPwdOtp}
+                    placeholder="123456"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, pwdLoading && { opacity: 0.7 }]}
+                onPress={handlePwdVerifyOTP}
+                disabled={pwdLoading}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {isEn ? 'Verify OTP' : 'OTP सत्यापित करें'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{ marginTop: 12, alignItems: 'center' }}
+                onPress={handlePwdRequestOTP}
+                disabled={pwdLoading}
+              >
+                <Text style={{ fontSize: 12, color: '#0A2540', fontWeight: '600' }}>
+                  {isEn ? 'Resend OTP Code' : 'OTP दोबारा भेजें'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View>
+              <Text style={{ fontSize: 13, color: '#475569', marginBottom: 14, lineHeight: 18 }}>
+                {isEn
+                  ? 'OTP verified! Enter your new password and confirm it below:'
+                  : 'OTP सत्यापित हुआ! अपना नया पासवर्ड और कन्फर्म पासवर्ड दर्ज करें:'}
+              </Text>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{isEn ? 'New Password' : 'नया पासवर्ड'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46, gap: 8 }}>
+                  <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 14, color: '#0F172A' }}
+                    secureTextEntry={!pwdShowNew}
+                    value={pwdNew}
+                    onChangeText={setPwdNew}
+                    placeholder={isEn ? '••••••••' : 'नया पासवर्ड (कम से कम 6 अक्षर)'}
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <TouchableOpacity onPress={() => setPwdShowNew(!pwdShowNew)}>
+                    <Ionicons name={pwdShowNew ? 'eye-off-outline' : 'eye-outline'} size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{isEn ? 'Confirm New Password' : 'नया पासवर्ड कन्फर्म करें'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 12, height: 46, gap: 8 }}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 14, color: '#0F172A' }}
+                    secureTextEntry={!pwdShowConfirm}
+                    value={pwdConfirm}
+                    onChangeText={setPwdConfirm}
+                    placeholder={isEn ? '••••••••' : 'नया पासवर्ड दोबारा दर्ज करें'}
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <TouchableOpacity onPress={() => setPwdShowConfirm(!pwdShowConfirm)}>
+                    <Ionicons name={pwdShowConfirm ? 'eye-off-outline' : 'eye-outline'} size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, pwdLoading && { opacity: 0.7 }]}
+                onPress={handlePwdResetPassword}
+                disabled={pwdLoading}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {isEn ? 'Update Password' : 'पासवर्ड अपडेट करें'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      </View>
-    </Modal>
-  );
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </Modal>
+);
+
 
   // ==========================================
   // MODAL 4: PRIVACY POLICY MODAL
