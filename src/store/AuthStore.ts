@@ -77,7 +77,7 @@ const AuthStore = {
    * mode: 'login' → only sign in existing users (returns 404 if not found)
    * mode: 'signup' → register new user first, then sign in (returns 409 if exists)
    */
-  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' = 'login'): Promise<AuthSession> => {
+  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' | 'auto' = 'auto'): Promise<AuthSession> => {
     const data = await authApi.firebaseLogin(id_token, mode);
 
     const user: StoredUser = {

@@ -17,6 +17,7 @@ import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { SupportedLanguage } from '../i18n/translations';
 import AuthStore from '../store/AuthStore';
+import { authApi } from '../api/authApi';
 import { getAuth, GoogleAuthProvider, signInWithCredential, getIdToken } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
@@ -37,13 +38,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLanguageChange,
 }) => {
   const isEn = currentLanguage === 'en';
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot_password'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Forgot Password State (3 Steps: 1. Request OTP -> 2. Verify OTP -> 3. Set New & Confirm Password)
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   // Stores pending Google idToken when user needs to take action (404/409)
   const [pendingGoogleToken, setPendingGoogleToken] = useState<string | null>(null);
   // 'not_found' = login but no account | 'already_exists' = signup but account exists
@@ -54,10 +65,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   // Step-by-step back navigation on Login Screen
   useEffect(() => {
     const onBackPress = () => {
-      // Step 1: If on Signup form, step back to Login form!
-      if (authMode === 'signup') {
+      // Step 1: If on Signup or Forgot Password form, step back to Login form!
+      if (authMode === 'signup' || authMode === 'forgot_password') {
         setAuthMode('login');
+        setForgotStep(1);
         setErrorMessage(null);
+        setSuccessMessage(null);
         setGoogleActionNeeded(null);
         setPendingGoogleToken(null);
         return true;
@@ -86,6 +99,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleAuth = async () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     // --- Basic validation ---
     if (authMode === 'signup' && !fullName.trim()) {
@@ -122,6 +136,102 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
+  const handleRequestOTP = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMessage(isEn ? 'Please enter your registered email address.' : 'कृपया अपना पंजीकृत ईमेल पता दर्ज करें।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await authApi.forgotPassword(email.trim());
+      setSuccessMessage(
+        res.message || (isEn ? 'An OTP has been sent to your email.' : 'आपकी ईमेल पर OTP भेज दिया गया है।')
+      );
+      setForgotStep(2);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        (isEn ? 'Failed to send OTP. Please try again.' : 'OTP भेजने में विफलता। पुनः प्रयास करें।');
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setErrorMessage(isEn ? 'Please enter the 6-digit OTP code.' : 'कृपया 6-अंकों का OTP कोड दर्ज करें।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await authApi.verifyOtp(email.trim(), otpCode.trim());
+      setSuccessMessage(
+        res.message || (isEn ? 'OTP verified successfully! Set your new password below.' : 'OTP सत्यापित हुआ! अपना नया पासवर्ड सेट करें।')
+      );
+      setForgotStep(3);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        (isEn ? 'Invalid or expired OTP code. Please try again.' : 'अमान्य या समाप्त OTP कोड। पुनः प्रयास करें।');
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!newPassword || newPassword.length < 6) {
+      setErrorMessage(isEn ? 'New password must be at least 6 characters.' : 'नया पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMessage(isEn ? 'New password and confirm password do not match.' : 'नया पासवर्ड और कन्फर्म पासवर्ड मेल नहीं खाते।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await authApi.resetPassword({
+        email: email.trim(),
+        otp: otpCode.trim(),
+        new_password: newPassword,
+      });
+      setSuccessMessage(
+        res.message || (isEn ? 'Password updated successfully! Redirecting to Sign In...' : 'पासवर्ड सफलतापूर्वक बदल दिया गया! लॉग इन पर वापस जा रहे हैं...')
+      );
+      setTimeout(() => {
+        setAuthMode('login');
+        setPassword('');
+        setOtpCode('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setForgotStep(1);
+        setSuccessMessage(null);
+      }, 2000);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        (isEn ? 'Password update failed. Please try again.' : 'पासवर्ड अपडेट विफल रहा। पुनः प्रयास करें।');
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
     setGoogleActionNeeded(null);
@@ -142,9 +252,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const currentUser = firebaseAuth.currentUser;
       if (currentUser) {
         const firebaseIdToken = await getIdToken(currentUser);
-        const session = await AuthStore.firebaseLogin(firebaseIdToken, authMode);
+        const session = await AuthStore.firebaseLogin(firebaseIdToken, 'auto');
         onLoginSuccess(session.user.displayName, session.user.email);
       }
+
     } catch (error: any) {
       console.log('Google Sign-In Error:', error);
       if (error.code === 'SIGN_IN_CANCELLED' || error.code === 'IN_PROGRESS') {
@@ -201,7 +312,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
       >
+
         {/* Top Language Switcher Bar */}
         {onLanguageChange && (
           <View style={styles.topLangRow}>
@@ -233,50 +346,80 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
         {/* 2. Authentication Card */}
         <View style={styles.authCard}>
-          {/* Segmented Mode Switcher */}
-          <View style={styles.modeTabsWrapper}>
-            <TouchableOpacity
-              style={[styles.modeTab, authMode === 'login' && styles.modeTabActive]}
-              onPress={() => {
-                setAuthMode('login');
-                setErrorMessage(null);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.modeTabText,
-                  authMode === 'login' && styles.modeTabTextActive,
-                ]}
+          {/* Segmented Mode Switcher (Hide in Forgot Password mode) */}
+          {authMode !== 'forgot_password' ? (
+            <View style={styles.modeTabsWrapper}>
+              <TouchableOpacity
+                style={[styles.modeTab, authMode === 'login' && styles.modeTabActive]}
+                onPress={() => {
+                  setAuthMode('login');
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                activeOpacity={0.8}
               >
-                {isEn ? 'Sign In' : 'लॉग इन'}
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.modeTabText,
+                    authMode === 'login' && styles.modeTabTextActive,
+                  ]}
+                >
+                  {isEn ? 'Sign In' : 'लॉग इन'}
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.modeTab, authMode === 'signup' && styles.modeTabActive]}
-              onPress={() => {
-                setAuthMode('signup');
-                setErrorMessage(null);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.modeTabText,
-                  authMode === 'signup' && styles.modeTabTextActive,
-                ]}
+              <TouchableOpacity
+                style={[styles.modeTab, authMode === 'signup' && styles.modeTabActive]}
+                onPress={() => {
+                  setAuthMode('signup');
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                activeOpacity={0.8}
               >
-                {isEn ? 'Register' : 'साइन अप'}
+                <Text
+                  style={[
+                    styles.modeTabText,
+                    authMode === 'signup' && styles.modeTabTextActive,
+                  ]}
+                >
+                  {isEn ? 'Register' : 'साइन अप'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.forgotHeaderRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setAuthMode('login');
+                  setForgotStep(1);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                style={styles.forgotBackBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={20} color={Colors.blue.dark} />
+              </TouchableOpacity>
+              <Text style={styles.forgotHeaderTitle}>
+                {isEn ? 'Reset Password' : 'पासवर्ड रीसेट करें'}
               </Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
 
           {/* Inline Error Message */}
           {errorMessage && (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={16} color={Colors.orange.primary} />
               <Text style={styles.errorBannerText}>{errorMessage}</Text>
+            </View>
+          )}
+
+          {/* Inline Success Banner */}
+          {successMessage && (
+            <View style={styles.successBanner}>
+              <Ionicons name="checkmark-circle" size={16} color="#059669" />
+              <Text style={styles.successBannerText}>{successMessage}</Text>
             </View>
           )}
 
@@ -348,121 +491,356 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </View>
           )}
 
-          {/* Form Fields */}
-          {authMode === 'signup' && (
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                {isEn ? 'Full Name' : 'पूरा नाम'}
-              </Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={18} color="#94A3B8" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder={isEn ? 'John Doe' : 'अपना पूरा नाम दर्ज करें'}
-                  placeholderTextColor="#94A3B8"
-                  value={fullName}
-                  onChangeText={(text) => {
-                    setFullName(text);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                />
+          {/* ================= NORMAL SIGNIN / SIGNUP FORM ================= */}
+          {authMode !== 'forgot_password' && (
+            <>
+              {authMode === 'signup' && (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>
+                    {isEn ? 'Full Name' : 'पूरा नाम'}
+                  </Text>
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="person-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder={isEn ? 'John Doe' : 'अपना पूरा नाम दर्ज करें'}
+                      placeholderTextColor="#94A3B8"
+                      value={fullName}
+                      onChangeText={(text) => {
+                        setFullName(text);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>
+                  {isEn ? 'Email Address' : 'ईमेल पता'}
+                </Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder={isEn ? 'name@example.com' : 'नाम@example.com'}
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={email}
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                  />
+                </View>
               </View>
-            </View>
+
+              <View style={styles.fieldGroup}>
+                <View style={styles.fieldHeaderRow}>
+                  <Text style={styles.fieldLabel}>
+                    {isEn ? 'Password' : 'पासवर्ड'}
+                  </Text>
+                  {authMode === 'login' && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setAuthMode('forgot_password');
+                        setForgotStep(1);
+                        setErrorMessage(null);
+                        setSuccessMessage(null);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.forgotPasswordLinkText}>
+                        {isEn ? 'Forgot Password?' : 'पासवर्ड भूल गए?'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder={isEn ? '••••••••' : 'पासवर्ड (कम से कम 6 अक्षर)'}
+                    placeholderTextColor="#94A3B8"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={(text) => {
+                      setPassword(text);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((prev) => !prev)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={19}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Primary Action Button */}
+              <TouchableOpacity
+                style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
+                onPress={handleAuth}
+                activeOpacity={0.88}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={Colors.white.pure} size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.primaryAuthButtonText}>
+                      {authMode === 'login'
+                        ? (isEn ? 'Sign In' : 'लॉग इन करें')
+                        : (isEn ? 'Create Account' : 'खाता बनाएं')}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Simple Clean Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>{isEn ? 'OR' : 'या'}</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Google Sign-In */}
+              <TouchableOpacity
+                style={styles.googleAuthButton}
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.85}
+              >
+                <Image
+                  source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }}
+                  style={{ width: 18, height: 18 }}
+                />
+                <Text style={styles.googleAuthButtonText}>
+                  {isEn ? 'Continue with Google' : 'Google के साथ आगे बढ़ें'}
+                </Text>
+              </TouchableOpacity>
+            </>
           )}
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              {isEn ? 'Email Address' : 'ईमेल पता'}
-            </Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={18} color="#94A3B8" />
-              <TextInput
-                style={styles.textInput}
-                placeholder={isEn ? 'name@example.com' : 'नाम@example.com'}
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-              />
-            </View>
-          </View>
+          {/* ================= FORGOT PASSWORD FORM ================= */}
+          {authMode === 'forgot_password' && (
+            <View style={{ marginTop: 4 }}>
+              {forgotStep === 1 ? (
+                <>
+                  <Text style={styles.forgotInstructionText}>
+                    {isEn
+                      ? 'Enter your registered email address. We will send a 6-digit OTP code to reset your password.'
+                      : 'अपना पंजीकृत ईमेल पता दर्ज करें। हम आपका पासवर्ड रीसेट करने के लिए 6-अंकीय OTP कोड भेजेंगे।'}
+                  </Text>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              {isEn ? 'Password' : 'पासवर्ड'}
-            </Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
-              <TextInput
-                style={styles.textInput}
-                placeholder={isEn ? '••••••••' : 'पासवर्ड (कम से कम 6 अक्षर)'}
-                placeholderTextColor="#94A3B8"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  if (errorMessage) setErrorMessage(null);
-                }}
-              />
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      {isEn ? 'Registered Email' : 'पंजीकृत ईमेल'}
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="mail-outline" size={18} color="#94A3B8" />
+                      <TextInput
+                        style={styles.textInput}
+                        placeholder={isEn ? 'name@example.com' : 'नाम@example.com'}
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={email}
+                        onChangeText={(text) => {
+                          setEmail(text);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
+                    onPress={handleRequestOTP}
+                    activeOpacity={0.88}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color={Colors.white.pure} size="small" />
+                    ) : (
+                      <>
+                        <Text style={styles.primaryAuthButtonText}>
+                          {isEn ? 'Send OTP Code' : 'OTP कोड भेजें'}
+                        </Text>
+                        <Ionicons name="paper-plane-outline" size={18} color={Colors.white.pure} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : forgotStep === 2 ? (
+                <>
+                  <Text style={styles.forgotInstructionText}>
+                    {isEn
+                      ? `OTP sent to ${email}. Enter the 6-digit code to verify:`
+                      : `OTP ${email} पर भेजा गया। सत्यापित करने के लिए 6-अंकीय कोड दर्ज करें:`}
+                  </Text>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      {isEn ? '6-Digit OTP Code' : '6-अंकीय OTP कोड'}
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="key-outline" size={18} color="#94A3B8" />
+                      <TextInput
+                        style={[styles.textInput, { letterSpacing: 4, fontWeight: '700' }]}
+                        placeholder="123456"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        value={otpCode}
+                        onChangeText={(text) => {
+                          setOtpCode(text);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
+                    onPress={handleVerifyOTP}
+                    activeOpacity={0.88}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color={Colors.white.pure} size="small" />
+                    ) : (
+                      <>
+                        <Text style={styles.primaryAuthButtonText}>
+                          {isEn ? 'Verify OTP' : 'OTP सत्यापित करें'}
+                        </Text>
+                        <Ionicons name="checkmark-circle-outline" size={18} color={Colors.white.pure} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{ marginTop: 14, alignItems: 'center' }}
+                    onPress={handleRequestOTP}
+                    disabled={isLoading}
+                  >
+                    <Text style={{ fontSize: 12, color: Colors.blue.dark, fontWeight: '600' }}>
+                      {isEn ? 'Resend OTP Code' : 'OTP दोबारा भेजें'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.forgotInstructionText}>
+                    {isEn
+                      ? 'OTP verified! Enter your new password and confirm it below:'
+                      : 'OTP सत्यापित हो गया! अपना नया पासवर्ड और कन्फर्म पासवर्ड दर्ज करें:'}
+                  </Text>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      {isEn ? 'New Password' : 'नया पासवर्ड'}
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                      <TextInput
+                        style={styles.textInput}
+                        placeholder={isEn ? '••••••••' : 'नया पासवर्ड (कम से कम 6 अक्षर)'}
+                        placeholderTextColor="#94A3B8"
+                        secureTextEntry={!showNewPassword}
+                        value={newPassword}
+                        onChangeText={(text) => {
+                          setNewPassword(text);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowNewPassword((prev) => !prev)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={showNewPassword ? 'eye-off-outline' : 'eye-outline'}
+                          size={19}
+                          color="#94A3B8"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>
+                      {isEn ? 'Confirm New Password' : 'नया पासवर्ड कन्फर्म करें'}
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+                      <TextInput
+                        style={styles.textInput}
+                        placeholder={isEn ? '••••••••' : 'नया पासवर्ड दोबारा दर्ज करें'}
+                        placeholderTextColor="#94A3B8"
+                        secureTextEntry={!showConfirmPassword}
+                        value={confirmPassword}
+                        onChangeText={(text) => {
+                          setConfirmPassword(text);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowConfirmPassword((prev) => !prev)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                          size={19}
+                          color="#94A3B8"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
+                    onPress={handleResetPassword}
+                    activeOpacity={0.88}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color={Colors.white.pure} size="small" />
+                    ) : (
+                      <>
+                        <Text style={styles.primaryAuthButtonText}>
+                          {isEn ? 'Update Password' : 'पासवर्ड अपडेट करें'}
+                        </Text>
+                        <Ionicons name="checkmark-done-circle-outline" size={18} color={Colors.white.pure} />
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+
+              {/* Back to Sign In button */}
               <TouchableOpacity
-                onPress={() => setShowPassword((prev) => !prev)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.backToLoginRow}
+                onPress={() => {
+                  setAuthMode('login');
+                  setForgotStep(1);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
               >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={19}
-                  color="#94A3B8"
-                />
+                <Ionicons name="arrow-back" size={14} color="#64748B" />
+                <Text style={styles.backToLoginText}>
+                  {isEn ? 'Back to Sign In' : 'साइन इन पर वापस जाएं'}
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Primary Action Button */}
-          <TouchableOpacity
-            style={[styles.primaryAuthButton, isLoading && { opacity: 0.75 }]}
-            onPress={handleAuth}
-            activeOpacity={0.88}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={Colors.white.pure} size="small" />
-            ) : (
-              <>
-                <Text style={styles.primaryAuthButtonText}>
-                  {authMode === 'login'
-                    ? (isEn ? 'Sign In' : 'लॉग इन करें')
-                    : (isEn ? 'Create Account' : 'खाता बनाएं')}
-                </Text>
-                <Ionicons name="arrow-forward" size={18} color={Colors.white.pure} />
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Simple Clean Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>{isEn ? 'OR' : 'या'}</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Google Sign-In */}
-          <TouchableOpacity
-            style={styles.googleAuthButton}
-            onPress={handleGoogleSignIn}
-            activeOpacity={0.85}
-          >
-            <Image
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png' }}
-              style={{ width: 18, height: 18 }}
-            />
-            <Text style={styles.googleAuthButtonText}>
-              {isEn ? 'Continue with Google' : 'Google के साथ आगे बढ़ें'}
-            </Text>
-          </TouchableOpacity>
+          )}
         </View>
 
         {/* 3. Secure Footer */}
@@ -479,6 +857,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   );
 };
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -487,9 +866,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingTop: Platform.OS === 'android' ? 28 : 56,
-    paddingBottom: 32,
+    paddingBottom: Platform.OS === 'android' ? 140 : 60,
     paddingHorizontal: 20,
   },
+
 
   // Top Language Bar
   topLangRow: {
@@ -787,4 +1167,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+
+  // Forgot Password Styles
+  fieldHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  forgotPasswordLinkText: {
+    fontSize: 12,
+    color: Colors.blue.dark,
+    fontWeight: '700',
+  },
+  forgotHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  forgotBackBtn: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  forgotHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  forgotInstructionText: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    gap: 8,
+  },
+  successBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#065F46',
+    fontWeight: '600',
+  },
+  backToLoginRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingVertical: 6,
+  },
+  backToLoginText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
 });
+

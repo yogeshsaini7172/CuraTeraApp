@@ -153,6 +153,18 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
     [initialFallbackSchemes, userEmail]
   );
 
+  // Clear cache and re-fetch whenever userEmail changes (login/logout/profile update)
+  useEffect(() => {
+    if (userEmail) {
+      cachedServerSchemes = null;
+      cachedEligibleCount = 0;
+      cachedPage = 1;
+      cachedHasMore = true;
+      fetchFromServer(1, activeFilter, searchQuery, true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail]);
+
   // 1. Initial Load & category filter change
   useEffect(() => {
     fetchFromServer(1, activeFilter, searchQuery, true);
@@ -163,7 +175,7 @@ export const SchemesScreen: React.FC<SchemesScreenProps> = ({
     if (isActive) {
       fetchFromServer(1, activeFilter, searchQuery, true);
     }
-  }, [isActive]);
+  }, [isActive, fetchFromServer]);
 
   // 2. Search query debounce
   const handleSearchChange = (text: string) => {
