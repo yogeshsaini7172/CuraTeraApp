@@ -286,10 +286,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     });
   };
 
-  // Speak welcome message aloud when screen opens
+  // Speak welcome message aloud when screen opens if in live mode
   useEffect(() => {
     const welcomeTimer = setTimeout(() => {
-      handleSpeak(initialBotMessage.text, currentLanguage);
+      if (isLiveModeRef.current) {
+        handleSpeak(initialBotMessage.text, currentLanguage);
+      }
     }, 450);
 
     return () => {
@@ -365,7 +367,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
     setShowAttachmentMenu(false);
     setMessages([initialBotMessage]);
     setTimeout(() => {
-      handleSpeak(initialBotMessage.text, currentLanguage);
+      if (isLiveModeRef.current) {
+        handleSpeak(initialBotMessage.text, currentLanguage);
+      }
     }, 300);
   };
 
@@ -461,9 +465,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
       if (isLiveModeRef.current) {
         setLiveAiResponse(response.message);
         setLiveTranscript('');
+        // Speak AI response aloud automatically only in live mode
+        handleSpeak(botResponse.text, currentLanguage);
       }
-      // Speak AI response aloud in user's selected language
-      handleSpeak(botResponse.text, currentLanguage);
     } catch (error) {
       console.error('Chat API Error:', error);
       const errorResponse: ChatMessage = {
@@ -473,7 +477,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
         text: isEn ? 'Sorry, I encountered an error while processing your request.' : 'क्षमा करें, आपके अनुरोध को संसाधित करते समय एक त्रुटि हुई।',
       };
       setMessages((prev) => [...prev, errorResponse]);
-      handleSpeak(errorResponse.text, currentLanguage);
+      if (isLiveModeRef.current) {
+        handleSpeak(errorResponse.text, currentLanguage);
+      }
     } finally {
       setIsLoading(false);
     }
