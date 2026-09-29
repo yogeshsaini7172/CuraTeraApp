@@ -131,19 +131,25 @@ export default function App() {
   // 4b. Real Backend Schemes State
   const [realSchemes, setRealSchemes] = useState<Scheme[]>([]);
 
+  // Fetch schemes with eligibility from backend (with email so server can evaluate profile)
+  const fetchSchemesWithEligibility = useCallback((email: string) => {
+    const url = email ? `/api/schemes?all=true&email=${encodeURIComponent(email)}` : '/api/schemes?all=true';
+    apiClient.get(url)
+      .then((res) => {
+        if (Array.isArray(res.data)) {
+          setRealSchemes(res.data);
+        } else if (res.data?.schemes) {
+          setRealSchemes(res.data.schemes);
+        }
+      })
+      .catch((err) => console.log('Error fetching backend schemes:', err?.message));
+  }, []);
+
   useEffect(() => {
-    if (isLoggedIn) {
-      apiClient.get('/api/schemes?all=true')
-        .then((res) => {
-          if (Array.isArray(res.data)) {
-            setRealSchemes(res.data);
-          } else if (res.data?.schemes) {
-            setRealSchemes(res.data.schemes);
-          }
-        })
-        .catch((err) => console.log('Error fetching backend schemes:', err?.message));
+    if (isLoggedIn && loggedInEmail) {
+      fetchSchemesWithEligibility(loggedInEmail);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, loggedInEmail, fetchSchemesWithEligibility]);
 
   // 5a. Splash + Auth: run minimum 4s branded screen AND auth check in parallel.
   //      Navigate only after BOTH are done (whichever takes longer wins).
@@ -244,7 +250,12 @@ export default function App() {
         })
         .catch((e) => console.log('Profile refresh on tab switch:', e?.message));
     }
-  }, []);
+
+    // Auto-refresh scheme eligibility from backend when navigating to schemes tab
+    if (newTab === 'schemes' && loggedInEmail) {
+      fetchSchemesWithEligibility(loggedInEmail);
+    }
+  }, [loggedInEmail, fetchSchemesWithEligibility]);
 
   const handleCloseDocsModal = useCallback(() => {
     Speech.stop();
@@ -336,31 +347,11 @@ export default function App() {
     return () => backSubscription.remove();
   }, [handleGoBack]);
 
-  // Dynamically calculate scheme eligibility strictly based on citizen's actual profile details
+  // Backend already evaluates profile+rules engine when email is passed in fetch.
+  // The backend determines 'isEligible', so we just use the realSchemes directly.
   const dynamicSchemes = useMemo(() => {
-    const p = activeDemoUser?.profile;
-    const hasOcc = Boolean(p?.occupation && String(p.occupation).trim());
-    const hasIncome = Boolean(p?.annualIncome !== undefined && p?.annualIncome !== null && String(p.annualIncome).trim());
-    const hasAge = p?.age !== null && p?.age !== undefined && String(p.age).trim() !== '';
-    const hasExplicit = Boolean(activeDemoUser?.eligibleSchemeIds && activeDemoUser.eligibleSchemeIds.length > 0);
-    const isProfileProper = hasOcc || hasIncome || hasAge || hasExplicit;
-
-    // Strict real-world rule: Incomplete / blank profile -> ZERO eligibility!
-    if (!isProfileProper) {
-      return realSchemes.map((scheme) => ({
-        ...scheme,
-        isEligible: false,
-        matchPercentage: 0,
-      }));
-    }
-
-    const eligibleIds = Array.isArray(activeDemoUser?.eligibleSchemeIds) ? activeDemoUser.eligibleSchemeIds : [];
-    return realSchemes.map((scheme) => ({
-      ...scheme,
-      isEligible: eligibleIds.includes(scheme.id),
-      matchPercentage: eligibleIds.includes(scheme.id) ? 100 : 0,
-    }));
-  }, [activeDemoUser, realSchemes]);
+    return realSchemes;
+  }, [realSchemes]);
 
   const eligibleCount = useMemo(() => {
     return dynamicSchemes.filter((s) => s.isEligible).length;

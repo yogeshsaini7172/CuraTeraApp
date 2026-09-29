@@ -53,7 +53,7 @@ export const authApi = {
    * mode: 'login' → only sign in existing users
    * mode: 'signup' → register new user first, then sign in
    */
-  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' = 'login'): Promise<AuthResponse> => {
+  firebaseLogin: async (id_token: string, mode: 'login' | 'signup' | 'auto' = 'auto'): Promise<AuthResponse> => {
     let fcm_token: string | null = null;
     try {
       fcm_token = await getFCMToken();
@@ -66,4 +66,31 @@ export const authApi = {
     });
     return res.data;
   },
+
+  /**
+   * Request OTP code for forgot password.
+   */
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    const res = await apiClient.post('/api/auth/forgot-password', { email });
+    return res.data;
+  },
+
+  /**
+   * Verify 6-digit OTP code before proceeding to set new password.
+   */
+  verifyOtp: async (email: string, otp: string): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/api/auth/verify-otp', { email, otp });
+    return res.data;
+  },
+
+  /**
+   * Reset password using OTP code.
+   */
+  resetPassword: async (payload: { email: string; otp: string; new_password: string }): Promise<{ message: string }> => {
+    const res = await apiClient.post('/api/auth/reset-password', payload);
+    return res.data;
+  },
 };
+
+
+
