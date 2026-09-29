@@ -42,7 +42,7 @@ export const LanguageSelectScreen: React.FC<LanguageSelectScreenProps> = ({
           <View style={styles.brandHeader}>
             <View style={styles.logoBadge}>
               <Image
-                source={require('../../assets/CuraTera_Logo.png')}
+                source={require('../../assets/CuraTera_Logo.jpeg')}
                 style={styles.logoImage}
                 resizeMode="cover"
               />
@@ -196,9 +196,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,

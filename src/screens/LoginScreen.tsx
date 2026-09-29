@@ -334,7 +334,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         {/* 1. Minimal & Clean Brand Hero */}
         <View style={styles.heroSection}>
           <Image
-            source={require('../../assets/CuraTera_Logo.png')}
+            source={require('../../assets/CuraTera_Logo.jpeg')}
             style={styles.logoImage}
             resizeMode="cover"
           />

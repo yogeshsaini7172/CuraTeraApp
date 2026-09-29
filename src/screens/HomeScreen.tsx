@@ -122,7 +122,7 @@ const VOICE_AI_CARD: Scheme = {
   requiredDocsEn: ['Speak by voice', 'No typing needed'],
   officialUrl: 'https://www.india.gov.in',
   helplinePhone: '1800111555',
-  image: require('../../assets/scheme_women.jpg'),
+  image: require('../../assets/CuraTera_Logo.jpeg'),
   themeColor: '#4F46E5',
   themeLight: '#EEF2FF',
   themeBorder: '#818CF8',

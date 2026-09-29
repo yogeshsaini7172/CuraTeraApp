@@ -785,6 +785,10 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
           },
         ]}
       >
+        <Text style={styles.disclaimerText}>
+          {isEn ? 'CuraTera can make mistakes. Check important info.' : 'क्यूराटेरा से गलतियां हो सकती हैं। महत्वपूर्ण जानकारी जांच लें।'}
+        </Text>
+
         {/* Attachment preview banner */}
         {pendingAttachment && (
           <View style={styles.pendingAttachmentBanner}>
@@ -1131,6 +1135,13 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
     position: 'relative',
     zIndex: 100,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 16,
   },
   modalContainer: {
     flex: 1,

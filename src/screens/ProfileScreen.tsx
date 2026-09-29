@@ -2332,7 +2332,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <View style={styles.toastOverlay} pointerEvents="none">
           <View style={styles.toastPill}>
             <Image
-              source={require('../../assets/CuraTera_Logo.png')}
+              source={require('../../assets/CuraTera_Logo.jpeg')}
               style={styles.toastAppLogo}
               resizeMode="cover"
             />

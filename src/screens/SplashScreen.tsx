@@ -111,7 +111,7 @@ export const SplashScreen: React.FC = () => {
         ]}
       >
         <Image
-          source={require('../../assets/CuraTera_Logo.png')}
+          source={require('../../assets/CuraTera_Logo.jpeg')}
           style={styles.logoImage}
           resizeMode="cover"
         />
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -177,8 +177,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.3)',
   },
   logoImage: {
     width: '100%',

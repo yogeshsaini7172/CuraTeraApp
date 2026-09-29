@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
         ) : isSchemesTab ? null : (
           <View style={styles.logoCircleWrapper}>
             <Image
-              source={require('../../assets/CuraTera_Logo.png')}
+              source={require('../../assets/CuraTera_Logo.jpeg')}
               style={styles.logoImg}
               resizeMode="cover"
             />
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     overflow: 'hidden',
-    backgroundColor: '#0055FF',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
