@@ -16,4 +16,8 @@ export const chatApi = {
     const response = await apiClient.get<{ messages: any[] }>('/api/chat/history');
     return response.data;
   },
+  verifyIdentity: async (aadhaar_demo_id: string): Promise<ChatMessageResponse> => {
+    const response = await apiClient.post<ChatMessageResponse>('/api/verify-identity', { aadhaar_demo_id });
+    return response.data;
+  }
 };
