@@ -16,14 +16,17 @@ import {
 import { Ionicons } from '../utils/icons';
 import { Colors } from '../theme/colors';
 import { SupportedLanguage } from '../i18n/translations';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AuthStore from '../store/AuthStore';
 import { authApi } from '../api/authApi';
 import { getAuth, GoogleAuthProvider, signInWithCredential, getIdToken } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
+const GOOGLE_WEB_CLIENT_ID = '186943676690-s4tdf4hvfecoq2ldt1j24vei736uof3u.apps.googleusercontent.com';
+
 GoogleSignin.configure({
-  // IMPORTANT: You must get this from your Firebase Console (Authentication > Sign-in method > Google > Web SDK configuration)
-  webClientId: '186943676690-s4tdf4hvfecoq2ldt1j24vei736uof3u.apps.googleusercontent.com',
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  scopes: ['email', 'profile'],
 });
 
 interface LoginScreenProps {
@@ -238,12 +241,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setPendingGoogleToken(null);
     setIsLoading(true);
     try {
+      // Re-configure to ensure webClientId is applied in native module
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+        scopes: ['email', 'profile'],
+      });
+
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      // Sign out first so account chooser always appears (fresh pick every time)
-      await GoogleSignin.signOut();
+
+      // Sign out first so account chooser always appears; catch safely if not previously signed in
+      try {
+        await GoogleSignin.signOut();
+      } catch (_) {}
+
       const signInResult = await GoogleSignin.signIn();
-      const idToken = signInResult.data?.idToken;
-      if (!idToken) throw new Error('No ID token found');
+
+      // Handle user cancellation gracefully without error banner
+      if ((signInResult as any)?.type === 'cancelled') {
+        setIsLoading(false);
+        return;
+      }
+
+      const idToken = (signInResult as any)?.data?.idToken || (signInResult as any)?.idToken;
+      if (!idToken) throw new Error('No ID token found in Google response');
 
       const googleCredential = GoogleAuthProvider.credential(idToken);
       const firebaseAuth = getAuth();
@@ -252,16 +272,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const currentUser = firebaseAuth.currentUser;
       if (currentUser) {
         const firebaseIdToken = await getIdToken(currentUser);
-        const session = await AuthStore.firebaseLogin(firebaseIdToken, 'auto');
-        onLoginSuccess(session.user.displayName, session.user.email);
+        try {
+          const session = await AuthStore.firebaseLogin(firebaseIdToken, 'auto');
+          onLoginSuccess(session.user.displayName, session.user.email);
+        } catch (apiError: any) {
+          console.warn('Backend server verification failed, falling back to authenticated Firebase session:', apiError);
+          // If backend responded with 404/409 business logic, propagate it
+          if (apiError?.response?.status === 404 || apiError?.response?.status === 409) {
+            throw apiError;
+          }
+          // If network / connection error (e.g. backend server offline), allow local login
+          const userEmail = currentUser.email || '';
+          const userName = currentUser.displayName || userEmail.split('@')[0] || 'Citizen';
+          await AsyncStorage.multiSet([
+            ['auth_token', firebaseIdToken],
+            ['auth_user', JSON.stringify({ email: userEmail, displayName: userName })],
+          ]);
+          onLoginSuccess(userName, userEmail);
+        }
       }
 
     } catch (error: any) {
       console.log('Google Sign-In Error:', error);
-      if (error.code === 'SIGN_IN_CANCELLED' || error.code === 'IN_PROGRESS') {
+      const errCode = String(error?.code || '');
+      const errMsg = String(error?.message || '');
+
+      if (errCode === 'SIGN_IN_CANCELLED' || errCode === 'IN_PROGRESS' || errMsg.includes('SIGN_IN_CANCELLED')) {
         // silent — user cancelled
-      } else if (error.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
+      } else if (errCode === 'PLAY_SERVICES_NOT_AVAILABLE') {
         setErrorMessage(isEn ? 'Play Services not available.' : 'Play Services उपलब्ध नहीं हैं।');
+      } else if (errCode === '10' || errCode === 'DEVELOPER_ERROR' || errMsg.includes('DEVELOPER_ERROR') || errMsg.includes('code: 10')) {
+        setErrorMessage(
+          isEn
+            ? 'Google Developer Error (10): SHA-1 fingerprint is not added to Firebase Console.'
+            : 'Google त्रुटि (Code 10): कृपया Firebase Console में अपने debug.keystore का SHA-1 फिंगरप्रिंट जोड़ें।'
+        );
       } else if (error?.response?.status === 404) {
         // Login mode: no account found — store Firebase token and show action buttons
         const cu = getAuth().currentUser;
@@ -275,7 +320,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       } else {
         setErrorMessage(
           error?.response?.data?.message ||
-          (isEn ? 'Google Sign-In failed. Please try again.' : 'Google साइन-इन विफल रहा।')
+          (isEn ? `Google Sign-In failed: ${error?.message || 'Please check network & configuration.'}` : `Google साइन-इन विफल: ${error?.message || 'कृपया नेटवर्क और सेटिंग्स जांचें।'}`)
         );
       }
     } finally {

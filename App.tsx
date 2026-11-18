@@ -16,7 +16,7 @@ import { Ionicons } from './src/utils/icons';
 import Speech from './src/utils/speech';
 import { Colors } from './src/theme/colors';
 import { NavTab, Scheme } from './src/types';
-import { CATEGORIES } from './src/data/schemesData';
+import { CATEGORIES, SCHEMES } from './src/data/schemesData';
 import { Header } from './src/components/Header';
 import { BottomNavBar } from './src/components/BottomNavBar';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -128,28 +128,29 @@ export default function App() {
   const [isSpeakingScheme, setIsSpeakingScheme] = useState<boolean>(false);
   const [activeHomeScheme, setActiveHomeScheme] = useState<Scheme | null>(null);
 
-  // 4b. Real Backend Schemes State
-  const [realSchemes, setRealSchemes] = useState<Scheme[]>([]);
+  // 4b. Real Backend Schemes State (initialized with SCHEMES catalog so UI is never blank)
+  const [realSchemes, setRealSchemes] = useState<Scheme[]>(() => SCHEMES);
 
   // Fetch schemes with eligibility from backend (with email so server can evaluate profile)
-  const fetchSchemesWithEligibility = useCallback((email: string) => {
+  const fetchSchemesWithEligibility = useCallback((email?: string) => {
     const url = email ? `/api/schemes?all=true&email=${encodeURIComponent(email)}` : '/api/schemes?all=true';
     apiClient.get(url)
       .then((res) => {
-        if (Array.isArray(res.data)) {
+        if (Array.isArray(res.data) && res.data.length > 0) {
           setRealSchemes(res.data);
-        } else if (res.data?.schemes) {
+        } else if (res.data?.schemes && res.data.schemes.length > 0) {
           setRealSchemes(res.data.schemes);
         }
       })
-      .catch((err) => console.log('Error fetching backend schemes:', err?.message));
+      .catch((err) => {
+        console.log('Error fetching backend schemes, keeping local catalog:', err?.message);
+        setRealSchemes(prev => prev.length > 0 ? prev : SCHEMES);
+      });
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn && loggedInEmail) {
-      fetchSchemesWithEligibility(loggedInEmail);
-    }
-  }, [isLoggedIn, loggedInEmail, fetchSchemesWithEligibility]);
+    fetchSchemesWithEligibility(loggedInEmail || undefined);
+  }, [loggedInEmail, fetchSchemesWithEligibility]);
 
   // 5a. Splash + Auth: run minimum 4s branded screen AND auth check in parallel.
   //      Navigate only after BOTH are done (whichever takes longer wins).

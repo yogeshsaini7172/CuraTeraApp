@@ -5,9 +5,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// TODO: Change this to your machine's local IP when testing on a physical device
-// e.g. 'http://192.168.1.5:5000'
-export const BASE_URL = 'http://10.247.71.102:5000';
+// Over USB cable with 'adb reverse tcp:5000 tcp:5000', localhost:5000 routes directly to this PC.
+// Alternatively for direct Wi-Fi without cable, use: 'http://10.114.64.97:5000'
+export const BASE_URL = 'http://localhost:5000';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
